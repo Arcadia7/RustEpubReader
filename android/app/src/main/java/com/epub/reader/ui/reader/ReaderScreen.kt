@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.Brush
@@ -516,12 +517,18 @@ private fun PageModeContent(
     val screenHeightDp = configuration.screenHeightDp.dp
     val screenWidthDp = configuration.screenWidthDp.dp
     // 按屏幕比例计算边距，适配不同尺寸设备
+    val isTwoColumn = screenWidthDp > 600.dp // 平板或宽屏双列模式
     val hPaddingDp = screenWidthDp * 0.065f      // 左右各约 6.5%
     val topPaddingDp = screenHeightDp * 0.075f   // 顶部留白略大
     val bottomPaddingDp = screenHeightDp * 0.035f // 底部留白（缩小以便节省空间）
     val titleVPaddingDp = topPaddingDp * 2.5f    // 标题上下合计（上 0.5x + 下 2.0x，加大正文间距）
     val availableHeightDp = (screenHeightDp - topPaddingDp - bottomPaddingDp).coerceAtLeast(280.dp)
-    val contentWidthDp = (screenWidthDp - hPaddingDp * 2f).coerceAtLeast(180.dp)
+    
+    val contentWidthDp = if (isTwoColumn) {
+        ((screenWidthDp - hPaddingDp * 3f) / 2f).coerceAtLeast(180.dp)
+    } else {
+        (screenWidthDp - hPaddingDp * 2f).coerceAtLeast(180.dp)
+    }
     val contentWidthPx = with(density) { contentWidthDp.toPx() }
     val spToPx = density.fontScale * density.density
     val showChapterTitle = remember(chapter) { shouldRenderChapterTitle(chapter) }
@@ -541,6 +548,10 @@ private fun PageModeContent(
             paginateContent(chapter, fontSize, availableHeightDp, contentWidthDp, density, showChapterTitle, titleVPaddingDp)
         }
     }
+    
+    val pairedPages = remember(pages, isTwoColumn) {
+        if (isTwoColumn) pages.chunked(2) else pages.map { listOf(it) }
+    }
 
     // 预加载相邻章节，消除跨章翻页时的白屏闪烁
     LaunchedEffect(currentChapter, fontSize, availableHeightDp, contentWidthDp) {
@@ -559,10 +570,12 @@ private fun PageModeContent(
     val hasNextChapter = currentChapter < totalChapters - 1
     val leadingVirtual = if (hasPrevChapter) 1 else 0
     val trailingVirtual = if (hasNextChapter) 1 else 0
-    val totalSlots = (pages.size + leadingVirtual + trailingVirtual).coerceAtLeast(1)
+    val totalSlots = (pairedPages.size + leadingVirtual + trailingVirtual).coerceAtLeast(1)
 
     val pagerState = rememberPagerState(pageCount = { totalSlots })
     val pageCurlState = rememberPageCurlState()
+    val bookSpreadState = com.epub.reader.ui.pagecurl.rememberBookSpreadState()
+    val isBookSpread = isTwoColumn && pageAnimation == "Realistic"
     val coroutineScope = rememberCoroutineScope()
     // 初始值 true：防止首次挂载时边界检测意外触发
     var chapterJumpTriggered by remember { mutableStateOf(true) }
@@ -585,7 +598,7 @@ private fun PageModeContent(
     val currentHasNextChapter by rememberUpdatedState(hasNextChapter)
     val currentLeadingVirtual by rememberUpdatedState(leadingVirtual)
     val currentTrailingVirtual by rememberUpdatedState(trailingVirtual)
-    val currentPages by rememberUpdatedState(pages)
+    val currentPairedPages by rememberUpdatedState(pairedPages)
     val currentSettingsVisible by rememberUpdatedState(settingsVisible)
     val currentControlsVisible by rememberUpdatedState(controlsVisible)
 
@@ -607,7 +620,7 @@ private fun PageModeContent(
 
             val tapZone = size.width / 3f
             val firstReadableSlot = currentLeadingVirtual
-            val lastReadableSlot = currentLeadingVirtual + currentPages.lastIndex
+            val lastReadableSlot = currentLeadingVirtual + currentPairedPages.lastIndex
             when {
                 position.x < tapZone -> {
                     val now = System.currentTimeMillis()
@@ -668,7 +681,7 @@ private fun PageModeContent(
         val isGoingBack = startAtLastPageRef[0]
         val targetSlot = if (isGoingBack) {
             startAtLastPageRef[0] = false
-            leadingVirtual + pages.lastIndex.coerceAtLeast(0)
+            leadingVirtual + pairedPages.lastIndex.coerceAtLeast(0)
         } else {
             leadingVirtual
         }
@@ -681,7 +694,11 @@ private fun PageModeContent(
                 chapterSlideProgress.animateTo(0f, animationSpec = tween(durationMillis = 400))
             }
             isRealChapterChange && pageAnimation == "Realistic" -> {
-                pageCurlState.snapTo(targetSlot)
+                if (isBookSpread) {
+                    bookSpreadState.snapTo(targetSlot)
+                } else {
+                    pageCurlState.snapTo(targetSlot)
+                }
                 prevChapterKey = currentChapter
             }
             isRealChapterChange && pageAnimation == "Cover" -> {
@@ -695,7 +712,9 @@ private fun PageModeContent(
             }
             else -> {
                 chapterAlpha.snapTo(1f)
-                if (pageAnimation == "Realistic") {
+                if (isBookSpread) {
+                    bookSpreadState.snapTo(targetSlot)
+                } else if (pageAnimation == "Realistic") {
                     pageCurlState.snapTo(targetSlot)
                 } else if (pagerState.currentPage != targetSlot) {
                     pagerState.scrollToPage(targetSlot)
@@ -708,8 +727,21 @@ private fun PageModeContent(
     }
 
     // 翻页到边界时，自动跨章节
-    LaunchedEffect(currentChapter, pageAnimation, hasPrevChapter, hasNextChapter, totalSlots) {
-        if (pageAnimation == "Realistic") {
+    LaunchedEffect(currentChapter, pageAnimation, hasPrevChapter, hasNextChapter, totalSlots, isBookSpread) {
+        if (isBookSpread) {
+            snapshotFlow { bookSpreadState.current }
+                .collect { currentSpread ->
+                    if (!chapterJumpTriggered) {
+                        if (hasPrevChapter && currentSpread <= 0) {
+                            chapterJumpTriggered = true
+                            currentOnPrevChapter()
+                        } else if (hasNextChapter && currentSpread >= totalSlots - 1) {
+                            chapterJumpTriggered = true
+                            currentOnNextChapter()
+                        }
+                    }
+                }
+        } else if (pageAnimation == "Realistic") {
             snapshotFlow { pageCurlState.current }
                 .collect { currentSlot ->
                     if (!chapterJumpTriggered) {
@@ -812,7 +844,137 @@ private fun PageModeContent(
                 }
             }
     ) {
-        if (pageAnimation == "Realistic") {
+        if (isBookSpread) {
+            // ─── 双列书脊翻页模式（平板专用）───
+            com.epub.reader.ui.pagecurl.BookSpreadCurl(
+                count = totalSlots,
+                state = bookSpreadState,
+                modifier = Modifier
+                    .weight(1f)
+                    .background(bgColor),
+                backPageColor = bgColor,
+                backPageContentAlpha = 0.25f,
+                shadowAlpha = 0.35f,
+                onCustomTap = { size, position ->
+                    if (currentSettingsVisible) return@BookSpreadCurl
+                    val chromeInset = size.height * 0.12f
+                    if (currentControlsVisible) {
+                        if (position.y < chromeInset || position.y > size.height - chromeInset) {
+                            return@BookSpreadCurl
+                        }
+                        currentOnToggleControls()
+                        return@BookSpreadCurl
+                    }
+                    val tapZone = size.width / 3f
+                    when {
+                        position.x < tapZone -> {
+                            val now = System.currentTimeMillis()
+                            if (now - lastFlipTime.longValue < flipCooldownMs) return@BookSpreadCurl
+                            lastFlipTime.longValue = now
+                            if (bookSpreadState.current <= 0) {
+                                // Already at the very beginning of the book
+                            } else {
+                                flipJob?.cancel()
+                                flipJob = coroutineScope.launch { bookSpreadState.prev() }
+                            }
+                        }
+                        position.x > size.width - tapZone -> {
+                            val now = System.currentTimeMillis()
+                            if (now - lastFlipTime.longValue < flipCooldownMs) return@BookSpreadCurl
+                            lastFlipTime.longValue = now
+                            if (bookSpreadState.current >= totalSlots - 1) {
+                                // Already at the very end of the book
+                            } else {
+                                flipJob?.cancel()
+                                flipJob = coroutineScope.launch { bookSpreadState.next() }
+                            }
+                        }
+                        else -> {
+                            currentOnToggleControls()
+                        }
+                    }
+                },
+            ) { spreadIndex ->
+                val actualSpreadIndex = spreadIndex - leadingVirtual
+                val isLeadingVirtual = leadingVirtual > 0 && actualSpreadIndex < 0
+                val isTrailingVirtual = trailingVirtual > 0 && actualSpreadIndex >= pairedPages.size
+
+                val slotColumns: List<List<ContentBlock>>
+                val slotTitle: String
+                val slotShowTitle: Boolean
+                val slotPageLabel: String
+                
+                val isTransitioning = prevChapterKey != currentChapter
+                val isGoingBack = currentChapter < prevChapterKey
+
+                fun getPageLabelLocal(columns: List<List<ContentBlock>>, startIdx: Int, totalP: Int): String {
+                    if (columns.isEmpty()) return ""
+                    if (columns.size == 1) return I18n.tf2("reader.page_info", "${startIdx + 1}", "$totalP")
+                    return I18n.tf2("reader.page_info", "${startIdx + 1}-${startIdx + 2}", "$totalP")
+                }
+
+                if (isTransitioning) {
+                    if (isGoingBack) {
+                        slotColumns = pairedPages.lastOrNull() ?: emptyList()
+                        slotTitle = chapter.title
+                        slotShowTitle = pairedPages.size == 1 && showChapterTitle
+                        val startIdx = if (pages.isEmpty()) 0 else if (pages.size % 2 == 0) pages.size - 2 else pages.size - 1
+                        slotPageLabel = getPageLabelLocal(slotColumns, startIdx, pages.size)
+                    } else {
+                        slotColumns = pairedPages.firstOrNull() ?: emptyList()
+                        slotTitle = chapter.title
+                        slotShowTitle = showChapterTitle
+                        val startIdx = 0
+                        slotPageLabel = getPageLabelLocal(slotColumns, startIdx, pages.size)
+                    }
+                } else if (isLeadingVirtual) {
+                    val pCh = allChapters.getOrNull(currentChapter - 1)
+                    val pPg = paginationCache[currentChapter - 1] ?: emptyList()
+                    val pPaired = if (isTwoColumn) pPg.chunked(2) else pPg.map { listOf(it) }
+                    slotColumns = pPaired.lastOrNull() ?: emptyList()
+                    slotTitle = pCh?.title ?: ""
+                    slotShowTitle = pCh != null && pPaired.size == 1 && shouldRenderChapterTitle(pCh)
+                    val startIdx = if (pPg.isEmpty()) 0 else if (isTwoColumn) {
+                        if (pPg.size % 2 == 0) pPg.size - 2 else pPg.size - 1
+                    } else pPg.size - 1
+                    slotPageLabel = getPageLabelLocal(slotColumns, startIdx, pPg.size)
+                } else if (isTrailingVirtual) {
+                    val nCh = allChapters.getOrNull(currentChapter + 1)
+                    val nPg = paginationCache[currentChapter + 1] ?: emptyList()
+                    val nPaired = if (isTwoColumn) nPg.chunked(2) else nPg.map { listOf(it) }
+                    slotColumns = nPaired.firstOrNull() ?: emptyList()
+                    slotTitle = nCh?.title ?: ""
+                    slotShowTitle = nCh != null && shouldRenderChapterTitle(nCh)
+                    val startIdx = 0
+                    slotPageLabel = getPageLabelLocal(slotColumns, startIdx, nPg.size)
+                } else {
+                    slotColumns = pairedPages.getOrNull(actualSpreadIndex) ?: emptyList()
+                    slotTitle = chapter.title
+                    slotShowTitle = showChapterTitle && actualSpreadIndex == 0
+                    val startIdx = if (isTwoColumn) actualSpreadIndex * 2 else actualSpreadIndex
+                    slotPageLabel = getPageLabelLocal(slotColumns, startIdx, pages.size)
+                }
+
+                PageRenderLayer(
+                    slotShowTitle = slotShowTitle,
+                    slotTitle = slotTitle,
+                    slotColumns = slotColumns,
+                    contentWidthPx = contentWidthPx,
+                    fontSize = fontSize,
+                    spToPx = spToPx,
+                    fontFamily = fontFamily,
+                    textColor = textColor,
+                    linkColor = linkColor,
+                    bgColor = bgColor,
+                    hPaddingDp = hPaddingDp,
+                    topPaddingDp = topPaddingDp,
+                    bottomPaddingDp = bottomPaddingDp,
+                    slotPageLabel = slotPageLabel,
+                    onLinkClick = onLinkClick,
+                    isTwoColumn = isTwoColumn
+                )
+            }
+        } else if (pageAnimation == "Realistic") {
             PageCurl(
                 count = totalSlots,
                 state = pageCurlState,
@@ -823,10 +985,10 @@ private fun PageModeContent(
             ) { pageIndex ->
                 val actualPageIndex = pageIndex - leadingVirtual
                 val isLeadingVirtual = leadingVirtual > 0 && actualPageIndex < 0
-                val isTrailingVirtual = trailingVirtual > 0 && actualPageIndex >= pages.size
+                val isTrailingVirtual = trailingVirtual > 0 && actualPageIndex >= pairedPages.size
 
                 // 虚拟槽显示相邻章节内容，消除跨章空白页
-                val slotPage: List<ContentBlock>
+                val slotColumns: List<List<ContentBlock>>
                 val slotTitle: String
                 val slotShowTitle: Boolean
                 val slotPageLabel: String
@@ -834,90 +996,71 @@ private fun PageModeContent(
                 val isTransitioning = prevChapterKey != currentChapter
                 val isGoingBack = currentChapter < prevChapterKey
 
+                fun getPageLabelLocal(columns: List<List<ContentBlock>>, startIdx: Int, totalP: Int): String {
+                    if (columns.isEmpty()) return ""
+                    if (columns.size == 1) return I18n.tf2("reader.page_info", "${startIdx + 1}", "$totalP")
+                    return I18n.tf2("reader.page_info", "${startIdx + 1}-${startIdx + 2}", "$totalP")
+                }
+
                 if (isTransitioning) {
                     if (isGoingBack) {
-                        slotPage = pages.lastOrNull() ?: emptyList()
+                        slotColumns = pairedPages.lastOrNull() ?: emptyList()
                         slotTitle = chapter.title
-                        slotShowTitle = pages.size == 1 && showChapterTitle
-                        slotPageLabel = if (pages.isNotEmpty()) I18n.tf2("reader.page_info", "${pages.size}", "${pages.size}") else ""
+                        slotShowTitle = pairedPages.size == 1 && showChapterTitle
+                        val startIdx = if (pages.isEmpty()) 0 else if (pages.size % 2 == 0) pages.size - 2 else pages.size - 1
+                        slotPageLabel = getPageLabelLocal(slotColumns, startIdx, pages.size)
                     } else {
-                        slotPage = pages.firstOrNull() ?: emptyList()
+                        slotColumns = pairedPages.firstOrNull() ?: emptyList()
                         slotTitle = chapter.title
                         slotShowTitle = showChapterTitle
-                        slotPageLabel = if (pages.isNotEmpty()) I18n.tf2("reader.page_info", "1", "${pages.size}") else ""
+                        val startIdx = 0
+                        slotPageLabel = getPageLabelLocal(slotColumns, startIdx, pages.size)
                     }
                 } else if (isLeadingVirtual) {
                     val pCh = allChapters.getOrNull(currentChapter - 1)
-                    val pPg = paginationCache[currentChapter - 1]
-                    slotPage = pPg?.lastOrNull() ?: emptyList()
+                    val pPg = paginationCache[currentChapter - 1] ?: emptyList()
+                    val pPaired = if (isTwoColumn) pPg.chunked(2) else pPg.map { listOf(it) }
+                    slotColumns = pPaired.lastOrNull() ?: emptyList()
                     slotTitle = pCh?.title ?: ""
-                    slotShowTitle = pCh != null && pPg != null && pPg.size == 1 && shouldRenderChapterTitle(pCh)
-                    slotPageLabel = if (pPg != null) I18n.tf2("reader.page_info", "${pPg.size}", "${pPg.size}") else ""
+                    slotShowTitle = pCh != null && pPaired.size == 1 && shouldRenderChapterTitle(pCh)
+                    val startIdx = if (pPg.isEmpty()) 0 else if (isTwoColumn) {
+                        if (pPg.size % 2 == 0) pPg.size - 2 else pPg.size - 1
+                    } else pPg.size - 1
+                    slotPageLabel = getPageLabelLocal(slotColumns, startIdx, pPg.size)
                 } else if (isTrailingVirtual) {
                     val nCh = allChapters.getOrNull(currentChapter + 1)
-                    val nPg = paginationCache[currentChapter + 1]
-                    slotPage = nPg?.firstOrNull() ?: emptyList()
+                    val nPg = paginationCache[currentChapter + 1] ?: emptyList()
+                    val nPaired = if (isTwoColumn) nPg.chunked(2) else nPg.map { listOf(it) }
+                    slotColumns = nPaired.firstOrNull() ?: emptyList()
                     slotTitle = nCh?.title ?: ""
                     slotShowTitle = nCh != null && shouldRenderChapterTitle(nCh)
-                    slotPageLabel = if (nPg != null) I18n.tf2("reader.page_info", "1", "${nPg.size}") else ""
+                    val startIdx = 0
+                    slotPageLabel = getPageLabelLocal(slotColumns, startIdx, nPg.size)
                 } else {
-                    slotPage = pages.getOrNull(actualPageIndex) ?: emptyList()
+                    slotColumns = pairedPages.getOrNull(actualPageIndex) ?: emptyList()
                     slotTitle = chapter.title
-                    slotShowTitle = showChapterTitle && actualPageIndex == 0 && actualPageIndex in pages.indices
-                    slotPageLabel = if (actualPageIndex in pages.indices) I18n.tf2("reader.page_info", "${actualPageIndex + 1}", "${pages.size}") else ""
+                    slotShowTitle = showChapterTitle && actualPageIndex == 0
+                    val startIdx = if (isTwoColumn) actualPageIndex * 2 else actualPageIndex
+                    slotPageLabel = getPageLabelLocal(slotColumns, startIdx, pages.size)
                 }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(bgColor)
-                        .graphicsLayer { clip = true }
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(start = hPaddingDp, end = hPaddingDp, top = topPaddingDp, bottom = bottomPaddingDp)
-                    ) {
-                        if (slotShowTitle) {
-                            Text(
-                                text = breakTitleIntoLines(slotTitle, contentWidthPx, fontSize * 1.5f, spToPx),
-                                style = TextStyle(
-                                    fontSize = (fontSize * 1.5f).sp,
-                                    lineHeight = (fontSize * 2.2f).sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = fontFamily,
-                                    color = textColor,
-                                    textAlign = TextAlign.Center
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .wrapContentHeight()
-                                    .padding(top = topPaddingDp * 0.5f, bottom = topPaddingDp * 2.0f)
-                            )
-                        }
-                        slotPage.forEach { block ->
-                            ContentBlockView(
-                                block = block,
-                                fontSize = fontSize,
-                                textColor = textColor,
-                                linkColor = linkColor,
-                                fontFamily = fontFamily,
-                                onLinkClick = onLinkClick
-                            )
-                        }
-                    }
-
-                    if (slotPageLabel.isNotEmpty()) {
-                        Text(
-                            text = slotPageLabel,
-                            fontSize = 12.sp,
-                            color = textColor.copy(alpha = 0.38f),
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(end = 16.dp, bottom = 8.dp)
-                        )
-                    }
-                }
+                PageRenderLayer(
+                    slotShowTitle = slotShowTitle,
+                    slotTitle = slotTitle,
+                    slotColumns = slotColumns,
+                    contentWidthPx = contentWidthPx,
+                    fontSize = fontSize,
+                    spToPx = spToPx,
+                    fontFamily = fontFamily,
+                    textColor = textColor,
+                    linkColor = linkColor,
+                    bgColor = bgColor,
+                    hPaddingDp = hPaddingDp,
+                    topPaddingDp = topPaddingDp,
+                    bottomPaddingDp = bottomPaddingDp,
+                    slotPageLabel = slotPageLabel,
+                    onLinkClick = onLinkClick
+                )
             }
         } else {
             HorizontalPager(
@@ -928,10 +1071,10 @@ private fun PageModeContent(
             ) { pageIndex ->
                 val actualPageIndex = pageIndex - leadingVirtual
                 val isLeadingVirtual = leadingVirtual > 0 && actualPageIndex < 0
-                val isTrailingVirtual = trailingVirtual > 0 && actualPageIndex >= pages.size
+                val isTrailingVirtual = trailingVirtual > 0 && actualPageIndex >= pairedPages.size
 
                 // 虚拟槽显示相邻章节内容
-                val slotPage: List<ContentBlock>
+                val slotColumns: List<List<ContentBlock>>
                 val slotTitle: String
                 val slotShowTitle: Boolean
                 val slotPageLabel: String
@@ -939,37 +1082,52 @@ private fun PageModeContent(
                 val isTransitioning = prevChapterKey != currentChapter
                 val isGoingBack = currentChapter < prevChapterKey
 
+                fun getPageLabelLocal(columns: List<List<ContentBlock>>, startIdx: Int, totalP: Int): String {
+                    if (columns.isEmpty()) return ""
+                    if (columns.size == 1) return I18n.tf2("reader.page_info", "${startIdx + 1}", "$totalP")
+                    return I18n.tf2("reader.page_info", "${startIdx + 1}-${startIdx + 2}", "$totalP")
+                }
+
                 if (isTransitioning) {
                     if (isGoingBack) {
-                        slotPage = pages.lastOrNull() ?: emptyList()
+                        slotColumns = pairedPages.lastOrNull() ?: emptyList()
                         slotTitle = chapter.title
-                        slotShowTitle = pages.size == 1 && showChapterTitle
-                        slotPageLabel = if (pages.isNotEmpty()) I18n.tf2("reader.page_info", "${pages.size}", "${pages.size}") else ""
+                        slotShowTitle = pairedPages.size == 1 && showChapterTitle
+                        val startIdx = if (pages.isEmpty()) 0 else if (pages.size % 2 == 0) pages.size - 2 else pages.size - 1
+                        slotPageLabel = getPageLabelLocal(slotColumns, startIdx, pages.size)
                     } else {
-                        slotPage = pages.firstOrNull() ?: emptyList()
+                        slotColumns = pairedPages.firstOrNull() ?: emptyList()
                         slotTitle = chapter.title
                         slotShowTitle = showChapterTitle
-                        slotPageLabel = if (pages.isNotEmpty()) I18n.tf2("reader.page_info", "1", "${pages.size}") else ""
+                        val startIdx = 0
+                        slotPageLabel = getPageLabelLocal(slotColumns, startIdx, pages.size)
                     }
                 } else if (isLeadingVirtual) {
                     val pCh = allChapters.getOrNull(currentChapter - 1)
-                    val pPg = paginationCache[currentChapter - 1]
-                    slotPage = pPg?.lastOrNull() ?: emptyList()
+                    val pPg = paginationCache[currentChapter - 1] ?: emptyList()
+                    val pPaired = if (isTwoColumn) pPg.chunked(2) else pPg.map { listOf(it) }
+                    slotColumns = pPaired.lastOrNull() ?: emptyList()
                     slotTitle = pCh?.title ?: ""
-                    slotShowTitle = pCh != null && pPg != null && pPg.size == 1 && shouldRenderChapterTitle(pCh)
-                    slotPageLabel = if (pPg != null) I18n.tf2("reader.page_info", "${pPg.size}", "${pPg.size}") else ""
+                    slotShowTitle = pCh != null && pPaired.size == 1 && shouldRenderChapterTitle(pCh)
+                    val startIdx = if (pPg.isEmpty()) 0 else if (isTwoColumn) {
+                        if (pPg.size % 2 == 0) pPg.size - 2 else pPg.size - 1
+                    } else pPg.size - 1
+                    slotPageLabel = getPageLabelLocal(slotColumns, startIdx, pPg.size)
                 } else if (isTrailingVirtual) {
                     val nCh = allChapters.getOrNull(currentChapter + 1)
-                    val nPg = paginationCache[currentChapter + 1]
-                    slotPage = nPg?.firstOrNull() ?: emptyList()
+                    val nPg = paginationCache[currentChapter + 1] ?: emptyList()
+                    val nPaired = if (isTwoColumn) nPg.chunked(2) else nPg.map { listOf(it) }
+                    slotColumns = nPaired.firstOrNull() ?: emptyList()
                     slotTitle = nCh?.title ?: ""
                     slotShowTitle = nCh != null && shouldRenderChapterTitle(nCh)
-                    slotPageLabel = if (nPg != null) I18n.tf2("reader.page_info", "1", "${nPg.size}") else ""
+                    val startIdx = 0
+                    slotPageLabel = getPageLabelLocal(slotColumns, startIdx, nPg.size)
                 } else {
-                    slotPage = pages.getOrNull(actualPageIndex) ?: emptyList()
+                    slotColumns = pairedPages.getOrNull(actualPageIndex) ?: emptyList()
                     slotTitle = chapter.title
-                    slotShowTitle = showChapterTitle && actualPageIndex == 0 && actualPageIndex in pages.indices
-                    slotPageLabel = if (actualPageIndex in pages.indices) I18n.tf2("reader.page_info", "${actualPageIndex + 1}", "${pages.size}") else ""
+                    slotShowTitle = showChapterTitle && actualPageIndex == 0
+                    val startIdx = if (isTwoColumn) actualPageIndex * 2 else actualPageIndex
+                    slotPageLabel = getPageLabelLocal(slotColumns, startIdx, pages.size)
                 }
 
                 // signedOffset: 正 = 在当前页左侧（旧页）；负 = 在当前页右侧（新页）
@@ -1005,60 +1163,34 @@ private fun PageModeContent(
                                     val shadowW = 20.dp.toPx()
                                     drawRect(
                                         brush = Brush.horizontalGradient(
-                                            colors = listOf(Color.Black.copy(alpha = 0.28f), Color.Transparent),
-                                            startX = 0f,
-                                            endX = shadowW
+                                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.28f)),
+                                            startX = -shadowW,
+                                            endX = 0f
                                         ),
+                                        topLeft = Offset(-shadowW, 0f),
                                         size = Size(shadowW, size.height)
                                     )
                                 }
                             } else Modifier
                         )
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(start = hPaddingDp, end = hPaddingDp, top = topPaddingDp, bottom = bottomPaddingDp)
-                    ) {
-                        if (slotShowTitle) {
-                            Text(
-                                text = breakTitleIntoLines(slotTitle, contentWidthPx, fontSize * 1.5f, spToPx),
-                                style = TextStyle(
-                                    fontSize = (fontSize * 1.5f).sp,
-                                    lineHeight = (fontSize * 2.2f).sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = fontFamily,
-                                    color = textColor,
-                                    textAlign = TextAlign.Center
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .wrapContentHeight()
-                                    .padding(top = topPaddingDp * 0.5f, bottom = topPaddingDp * 2.0f)
-                            )
-                        }
-                        slotPage.forEach { block ->
-                            ContentBlockView(
-                                block = block,
-                                fontSize = fontSize,
-                                textColor = textColor,
-                                linkColor = linkColor,
-                                fontFamily = fontFamily,
-                                onLinkClick = onLinkClick
-                            )
-                        }
-                    }
-
-                    if (slotPageLabel.isNotEmpty()) {
-                        Text(
-                            text = slotPageLabel,
-                            fontSize = 12.sp,
-                            color = textColor.copy(alpha = 0.38f),
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(end = 16.dp, bottom = 8.dp)
-                        )
-                    }
+                    PageRenderLayer(
+                        slotShowTitle = slotShowTitle,
+                        slotTitle = slotTitle,
+                        slotColumns = slotColumns,
+                        contentWidthPx = contentWidthPx,
+                        fontSize = fontSize,
+                        spToPx = spToPx,
+                        fontFamily = fontFamily,
+                        textColor = textColor,
+                        linkColor = linkColor,
+                        bgColor = bgColor,
+                        hPaddingDp = hPaddingDp,
+                        topPaddingDp = topPaddingDp,
+                        bottomPaddingDp = bottomPaddingDp,
+                        slotPageLabel = slotPageLabel,
+                        onLinkClick = onLinkClick
+                    )
                 }
             }
         }
@@ -1863,6 +1995,93 @@ private fun ReaderBottomBar(
                     Icon(Icons.Default.LightMode, I18n.t("nav.light_mode"))
                 }
             }
+        }
+    }
+}
+@Composable
+private fun PageRenderLayer(
+    slotShowTitle: Boolean,
+    slotTitle: String,
+    slotColumns: List<List<ContentBlock>>,
+    contentWidthPx: Float,
+    fontSize: Float,
+    spToPx: Float,
+    fontFamily: FontFamily,
+    textColor: Color,
+    linkColor: Color,
+    bgColor: Color,
+    hPaddingDp: androidx.compose.ui.unit.Dp,
+    topPaddingDp: androidx.compose.ui.unit.Dp,
+    bottomPaddingDp: androidx.compose.ui.unit.Dp,
+    slotPageLabel: String,
+    onLinkClick: (String) -> Unit,
+    isTwoColumn: Boolean = false
+) {
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgColor)
+            .graphicsLayer { clip = true }
+    ) {
+        androidx.compose.foundation.layout.Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = topPaddingDp, bottom = bottomPaddingDp)
+        ) {
+            slotColumns.forEachIndexed { index, colBlock ->
+                val colShowTitle = if (index == 0) slotShowTitle else false
+                androidx.compose.foundation.layout.Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .padding(
+                            start = if (index == 0) hPaddingDp else hPaddingDp / 2f,
+                            end = if (index == slotColumns.lastIndex) hPaddingDp else hPaddingDp / 2f
+                        )
+                ) {
+                    if (colShowTitle) {
+                        androidx.compose.material3.Text(
+                            text = breakTitleIntoLines(slotTitle, contentWidthPx, fontSize * 1.5f, spToPx),
+                            style = androidx.compose.ui.text.TextStyle(
+                                fontSize = (fontSize * 1.5f).sp,
+                                lineHeight = (fontSize * 2.2f).sp,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                fontFamily = fontFamily,
+                                color = textColor,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .wrapContentHeight()
+                                .padding(top = topPaddingDp * 0.5f, bottom = topPaddingDp * 2.0f)
+                        )
+                    }
+                    colBlock.forEach { block ->
+                        ContentBlockView(
+                            block = block,
+                            fontSize = fontSize,
+                            textColor = textColor,
+                            linkColor = linkColor,
+                            fontFamily = fontFamily,
+                            onLinkClick = onLinkClick
+                        )
+                    }
+                }
+            }
+            if (isTwoColumn && slotColumns.size == 1) {
+                androidx.compose.foundation.layout.Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+
+        if (slotPageLabel.isNotEmpty()) {
+            androidx.compose.material3.Text(
+                text = slotPageLabel,
+                fontSize = 12.sp,
+                color = textColor.copy(alpha = 0.38f),
+                modifier = Modifier
+                    .align(androidx.compose.ui.Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 8.dp)
+            )
         }
     }
 }
