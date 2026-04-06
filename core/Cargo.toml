@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = []
 keychain = ["keyring"]
+csc = ["ort", "tokenizers"]
 
 [dependencies]
 epub = "2.1"
@@ -21,3 +22,12 @@ x25519-dalek = { version = "2", features = ["static_secrets"] }
 hkdf = "0.12"
 uuid = { version = "1", features = ["v4"] }
 keyring = { version = "3", optional = true }
+# TXT-to-EPUB
+chardetng = "0.1"
+encoding_rs = "0.8"
+epub-builder = "0.7"
+regex = "1"
+thiserror = "2"
+# CSC (Chinese Spelling Correction)
+ort = { version = "2.0.0-rc.12", features = ["download-binaries", "ndarray"], optional = true }
+tokenizers = { version = "0.21", optional = true }

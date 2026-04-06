@@ -101,6 +101,33 @@ fn setup_fonts(ctx: &egui::Context) {
         .families
         .insert(egui::FontFamily::Name("Serif".into()), serif_family);
 
+    // Emoji / symbol fallback font
+    let emoji_paths = [
+        "C:\\Windows\\Fonts\\seguisym.ttf",
+        "C:\\Windows\\Fonts\\seguiemj.ttf",
+        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+        "/System/Library/Fonts/Apple Color Emoji.ttc",
+    ];
+    for path in &emoji_paths {
+        if let Ok(data) = std::fs::read(path) {
+            fonts.font_data.insert(
+                "emoji_font".to_owned(),
+                egui::FontData::from_owned(data).into(),
+            );
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .push("emoji_font".to_owned());
+            fonts
+                .families
+                .entry(egui::FontFamily::Monospace)
+                .or_default()
+                .push("emoji_font".to_owned());
+            break;
+        }
+    }
+
     ctx.set_fonts(fonts);
 }
 

@@ -1,6 +1,16 @@
 pub mod about;
+pub mod annotations;
+pub mod csc_contribute;
+pub mod csc_settings;
+pub mod export_dialog;
+pub mod github_oauth;
 pub mod library;
 pub mod reader;
+pub mod search;
+pub mod settings_new;
 pub mod sharing;
+pub mod stats;
 pub mod toc;
 pub mod toolbar;
+pub mod tts;
+pub mod txt_import;

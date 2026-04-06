@@ -1,7 +1,11 @@
+pub mod csc;
 pub mod epub;
+pub mod export;
 pub mod i18n;
 pub mod library;
+pub mod search;
 pub mod sharing;
+pub mod txt;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

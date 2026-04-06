@@ -167,3 +167,75 @@ data class DiscoveredPeer(
     val addr: String,
     @SerialName("last_seen") val lastSeen: Long = 0
 )
+
+/** 搜索结果 */
+@Serializable
+data class SearchResult(
+    val chapterIndex: Int,
+    val chapterTitle: String,
+    val blockIndex: Int,
+    val context: String,
+    val matchStart: Int,
+    val matchLen: Int
+)
+
+/** 书签 */
+@Serializable
+data class BookmarkDto(
+    val chapter: Int,
+    val block: Int = 0,
+    @SerialName("created_at") val createdAt: Long = 0
+)
+
+/** 高亮颜色 */
+enum class HighlightColor { Yellow, Green, Blue, Pink }
+
+/** 高亮 */
+@Serializable
+data class HighlightDto(
+    val id: String,
+    val chapter: Int,
+    @SerialName("start_block") val startBlock: Int,
+    @SerialName("start_offset") val startOffset: Int,
+    @SerialName("end_block") val endBlock: Int,
+    @SerialName("end_offset") val endOffset: Int,
+    val color: String = "Yellow",
+    @SerialName("created_at") val createdAt: Long = 0
+)
+
+/** 笔记 */
+@Serializable
+data class NoteDto(
+    @SerialName("highlight_id") val highlightId: String,
+    val content: String,
+    @SerialName("created_at") val createdAt: Long = 0,
+    @SerialName("updated_at") val updatedAt: Long = 0
+)
+
+/** 纠错记录 */
+@Serializable
+data class CorrectionDto(
+    val chapter: Int,
+    @SerialName("block_idx") val blockIdx: Int,
+    @SerialName("char_offset") val charOffset: Int,
+    val original: String,
+    val corrected: String,
+    val status: String
+)
+
+/** 完整书籍配置（Rust BookConfig 的 Android 映射） */
+@Serializable
+data class FullBookConfig(
+    val id: String,
+    val title: String,
+    @SerialName("epub_path") val epubPath: String,
+    @SerialName("last_chapter") val lastChapter: Int = 0,
+    @SerialName("last_chapter_title") val lastChapterTitle: String? = null,
+    @SerialName("last_opened") val lastOpened: Long = 0,
+    @SerialName("created_at") val createdAt: Long = 0,
+    @SerialName("updated_at") val updatedAt: Long = 0,
+    val bookmarks: List<BookmarkDto> = emptyList(),
+    val highlights: List<HighlightDto> = emptyList(),
+    val notes: List<NoteDto> = emptyList(),
+    val corrections: List<CorrectionDto> = emptyList()
+)

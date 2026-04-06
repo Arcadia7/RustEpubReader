@@ -15,6 +15,54 @@ use reader_core::sharing::{start_listener, DiscoveredPeer, PeerStore};
 
 type FontDiscoveryResult = Arc<Mutex<Option<(Vec<String>, HashMap<String, String>)>>>;
 
+/// Push a debug log entry from anywhere (including background threads).
+/// Writes to both the in-memory feedback_logs buffer and stderr (when debug logging is enabled).
+pub fn dbg_log(logs: &Arc<Mutex<Vec<String>>>, msg: impl AsRef<str>) {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let line = format!("[{ts}] {}", msg.as_ref());
+    if reader_core::sharing::is_debug_logging_enabled() {
+        eprintln!("[DBG] {line}");
+    }
+    if let Ok(mut v) = logs.lock() {
+        v.push(line);
+        if v.len() > 600 {
+            let remove = v.len().saturating_sub(600);
+            v.drain(0..remove);
+        }
+    }
+}
+
+/// Work item sent to the CSC background worker thread.
+pub struct CscWork {
+    pub chapter: usize,
+    pub blocks: Vec<(usize, String)>,
+    pub mode: reader_core::csc::CorrectionMode,
+    pub threshold: reader_core::csc::CscThreshold,
+}
+
+/// Result returned from the CSC background worker thread.
+pub struct CscResult {
+    pub chapter: usize,
+    pub corrections: Vec<(usize, Vec<reader_core::epub::CorrectionInfo>)>,
+}
+
+/// State for the CSC correction popup (accept / revert / ignore).
+#[derive(Clone)]
+pub struct CscPopupInfo {
+    pub chapter: usize,
+    pub block_idx: usize,
+    pub char_offset: usize,
+    pub original: String,
+    pub corrected: String,
+    pub confidence: f32,
+    pub pos: egui::Pos2,
+    /// Skip "click outside to close" on the frame the popup was just opened.
+    pub just_opened: bool,
+}
+
 fn default_data_dir() -> String {
     let dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let _ = std::fs::create_dir_all(&dir);
@@ -184,6 +232,18 @@ fn default_anim_speed() -> f32 {
     0.14
 }
 
+fn default_line_spacing() -> f32 {
+    1.8
+}
+
+fn default_para_spacing() -> f32 {
+    0.6
+}
+
+fn default_text_indent() -> u8 {
+    2
+}
+
 fn generate_pin() -> String {
     use rand::RngCore;
     let val = rand::rngs::OsRng.next_u32() % 10000;
@@ -212,6 +272,34 @@ struct AppSettings {
     last_chapter: usize,
     #[serde(default)]
     auto_start_sharing: bool,
+    #[serde(default = "default_line_spacing")]
+    line_spacing: f32,
+    #[serde(default = "default_para_spacing")]
+    para_spacing: f32,
+    #[serde(default = "default_text_indent")]
+    text_indent: u8,
+    #[serde(default)]
+    auto_scroll_speed: f32,
+    #[serde(default)]
+    tts_voice_name: String,
+    #[serde(default)]
+    tts_rate: i32,
+    #[serde(default)]
+    tts_volume: i32,
+    #[serde(default)]
+    translate_api_url: String,
+    #[serde(default)]
+    translate_api_key: String,
+    #[serde(default)]
+    dictionary_api_url: String,
+    #[serde(default)]
+    dictionary_api_key: String,
+    #[serde(default)]
+    csc_mode: reader_core::csc::CorrectionMode,
+    #[serde(default)]
+    csc_threshold: reader_core::csc::CscThreshold,
+    #[serde(default)]
+    github_username: Option<String>,
 }
 
 impl AppSettings {
@@ -263,6 +351,20 @@ impl AppSettings {
             last_book_path,
             last_chapter,
             auto_start_sharing: app.auto_start_sharing,
+            line_spacing: app.line_spacing,
+            para_spacing: app.para_spacing,
+            text_indent: app.text_indent,
+            auto_scroll_speed: app.auto_scroll_speed,
+            tts_voice_name: app.tts_voice_name.clone(),
+            tts_rate: app.tts_rate.clone(),
+            tts_volume: app.tts_volume.clone(),
+            translate_api_url: app.translate_api_url.clone(),
+            translate_api_key: app.translate_api_key.clone(),
+            dictionary_api_url: app.dictionary_api_url.clone(),
+            dictionary_api_key: app.dictionary_api_key.clone(),
+            csc_mode: app.csc_mode.clone(),
+            csc_threshold: app.csc_threshold.clone(),
+            github_username: app.github_username.clone(),
         }
     }
 
@@ -279,7 +381,27 @@ impl AppSettings {
         app.scroll_mode = self.scroll_mode;
         app.show_toc = self.show_toc;
         app.auto_start_sharing = self.auto_start_sharing;
+        app.line_spacing = self.line_spacing.clamp(0.8, 2.5);
+        app.para_spacing = self.para_spacing.clamp(0.0, 2.0);
+        app.text_indent = self.text_indent.min(4);
+        app.auto_scroll_speed = self.auto_scroll_speed.clamp(0.0, 200.0);
         app.i18n.set_language(Language::from_code(&self.language));
+        if !self.tts_voice_name.is_empty() {
+            app.tts_voice_name = self.tts_voice_name.clone();
+        }
+        app.tts_rate = self.tts_rate;
+        app.tts_volume = self.tts_volume;
+        app.translate_api_url = self.translate_api_url.clone();
+        app.translate_api_key = self.translate_api_key.clone();
+        app.dictionary_api_url = self.dictionary_api_url.clone();
+        app.dictionary_api_key = self.dictionary_api_key.clone();
+        app.csc_mode = self.csc_mode.clone();
+        app.csc_threshold = self.csc_threshold.clone();
+        app.github_username = self.github_username.clone();
+        // Restore GitHub token from OS credential store
+        if app.github_username.is_some() {
+            app.github_token = reader_core::sharing::keystore::load_github_token();
+        }
         // last_book_path/last_chapter applied in Default::default after call
     }
 }
@@ -288,6 +410,45 @@ impl AppSettings {
 pub enum AppView {
     Library,
     Reader,
+}
+
+/// Custom text selection state (replaces egui's native selectable label).
+#[derive(Clone, Debug)]
+pub struct TextSelection {
+    /// Chapter-level block index where the drag started.
+    pub start_block: usize,
+    /// Char offset within start_block.
+    pub start_char: usize,
+    /// Chapter-level block index where the drag currently ends.
+    pub end_block: usize,
+    /// Char offset within end_block.
+    pub end_char: usize,
+    /// True while the user is still dragging.
+    pub is_dragging: bool,
+}
+
+impl TextSelection {
+    /// Returns (first_block, first_char) regardless of drag direction.
+    pub fn normalized(&self) -> (usize, usize) {
+        if self.start_block < self.end_block
+            || (self.start_block == self.end_block && self.start_char <= self.end_char)
+        {
+            (self.start_block, self.start_char)
+        } else {
+            (self.end_block, self.end_char)
+        }
+    }
+
+    /// Returns (start_block, start_char, end_block, end_char) in order: start <= end.
+    pub fn normalized_range(&self) -> (usize, usize, usize, usize) {
+        if self.start_block < self.end_block
+            || (self.start_block == self.end_block && self.start_char <= self.end_char)
+        {
+            (self.start_block, self.start_char, self.end_block, self.end_char)
+        } else {
+            (self.end_block, self.end_char, self.start_block, self.start_char)
+        }
+    }
 }
 
 pub struct ReaderApp {
@@ -307,7 +468,7 @@ pub struct ReaderApp {
     pub reader_bg_image_path: Option<String>,
     pub reader_bg_image_alpha: f32,
     pub reader_bg_texture: Option<egui::TextureHandle>,
-    pub show_reader_settings: bool,
+    pub show_settings: bool,
     pub show_toc: bool,
     pub scroll_to_top: bool,
     pub error_msg: Option<String>,
@@ -328,6 +489,7 @@ pub struct ReaderApp {
     pub page_anim_cross_chapter: bool,
     pub page_anim_cross_chapter_snapshot: Option<CrossChapterSnapshot>,
     pub is_dual_column: bool,
+    pub paging_page_rect: Option<egui::Rect>,
     pub embedded_font_names: Vec<String>,
     pub embedded_fonts_registered: bool,
     pub defer_custom_font_for_frame: bool,
@@ -372,6 +534,109 @@ pub struct ReaderApp {
     pub _update_check_slot: Option<Arc<Mutex<Option<UpdateState>>>>,
     pub _update_download_slot: Option<Arc<Mutex<Option<UpdateState>>>>,
     pub _update_progress: Option<Arc<Mutex<f32>>>,
+    // ── TXT Import ──
+    pub txt_import: Option<TxtImportState>,
+    // ── Typography ──
+    pub line_spacing: f32,
+    pub para_spacing: f32,
+    pub text_indent: u8,
+    // ── Search ──
+    pub show_search: bool,
+    pub search_query: String,
+    pub search_results: Vec<reader_core::search::SearchResult>,
+    pub search_selected: Option<usize>,
+    // ── Annotations ──
+    pub show_annotations: bool,
+    pub book_config: Option<reader_core::library::BookConfig>,
+    // ── Export ──
+    pub show_export_dialog: bool,
+    #[allow(dead_code)]
+    pub export_book_id: Option<String>,
+    // ── Stats ──
+    pub show_stats: bool,
+    pub reading_session_start: Option<u64>,
+    // ── Auto-scroll ──
+    #[allow(dead_code)]
+    pub auto_scroll: bool,
+    pub auto_scroll_speed: f32,
+    // ── Library export ──
+    pub export_library_path: Option<String>,
+    // ── Custom text selection ──
+    pub text_selection: Option<TextSelection>,
+    pub sel_toolbar_pos: egui::Pos2,
+    /// Pending drag origin: (press_pos, block_idx, char_idx). Created on press, promoted to
+    /// TextSelection only when pointer moves > threshold. Cleared on release if no drag occurred.
+    pub sel_press_origin: Option<(egui::Pos2, usize, usize)>,
+    /// When set, the user clicked on a highlighted region → show note popup for this highlight.
+    pub clicked_highlight_id: Option<String>,
+    pub hl_note_toolbar_pos: egui::Pos2,
+    pub hl_note_just_opened: bool,
+    /// Note editing in annotations panel: highlight id being edited
+    pub editing_note_id: Option<String>,
+    pub editing_note_buf: String,
+    // ── TTS ──
+    pub tts_playing: bool,
+    pub tts_paused: bool,
+    pub tts_voice_name: String,
+    pub tts_rate: i32,         // e.g. 0, -20, +50 (percent)
+    pub tts_volume: i32,       // e.g. 0, -50, +50 (percent)
+    pub tts_current_block: usize,
+    pub tts_stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub tts_audio_sink: Option<std::sync::Arc<rodio::Sink>>,
+    pub tts_status: std::sync::Arc<std::sync::Mutex<String>>,
+    pub show_tts_panel: bool,
+    pub tts_pending_audio: Option<std::sync::Arc<std::sync::Mutex<Option<Vec<u8>>>>>,
+    /// Prefetched audio for the next block (ready to play immediately when current finishes).
+    pub tts_prefetch_audio: Option<std::sync::Arc<std::sync::Mutex<Option<Vec<u8>>>>>,
+    /// Block index that the prefetch corresponds to.
+    pub tts_prefetch_block: usize,
+    pub last_egui_ctx: Option<egui::Context>,
+    // ── API Settings ──
+    pub translate_api_url: String,
+    pub translate_api_key: String,
+    pub dictionary_api_url: String,
+    pub dictionary_api_key: String,
+
+    // ── CSC (Chinese Spelling Correction) ──
+    pub csc_mode: reader_core::csc::CorrectionMode,
+    pub csc_threshold: reader_core::csc::CscThreshold,
+    pub csc_model_status: reader_core::csc::ModelStatus,
+    pub csc_download_progress: std::sync::Arc<std::sync::Mutex<f32>>,
+    pub csc_engine: std::sync::Arc<std::sync::Mutex<Option<reader_core::csc::CscEngine>>>,
+    /// Cached correction results: (chapter, block_idx) → Vec<CorrectionInfo>
+    pub csc_cache: std::collections::HashMap<(usize, usize), Vec<reader_core::epub::CorrectionInfo>>,
+    /// Channel to send work to the CSC background worker thread.
+    pub csc_work_tx: Option<std::sync::mpsc::Sender<CscWork>>,
+    /// Channel to receive results from the CSC background worker thread.
+    pub csc_result_rx: Option<std::sync::mpsc::Receiver<CscResult>>,
+    /// Active CSC correction popup (for accept / revert / ignore).
+    pub csc_popup: Option<CscPopupInfo>,
+    /// Buffer for custom CSC replacement text input.
+    pub csc_custom_replace_buf: String,
+    /// Whether the custom replace popup is shown (selection-based).
+    pub csc_custom_replace_active: bool,
+    // ── GitHub OAuth ──
+    pub github_token: Option<String>,
+    pub github_username: Option<String>,
+    pub github_device_code: Option<String>,
+    pub github_user_code: Option<String>,
+    pub github_oauth_polling: bool,
+    pub github_oauth_interval: u64,
+    pub github_oauth_expires_at: Option<std::time::Instant>,
+    pub show_github_login: bool,
+    pub github_oauth_status: String,
+    // GitHub OAuth Device Flow async channels
+    pub github_pending_device_code: Option<std::sync::mpsc::Receiver<Result<(String, String, u64, u64), String>>>,
+    pub github_pending_token_poll: Option<std::sync::mpsc::Receiver<Result<crate::ui::github_oauth::PollResult, String>>>,
+    pub github_last_poll: Option<std::time::Instant>,
+    // ── CSC Contribution ──
+    pub show_csc_contribute_dialog: bool,
+    pub csc_contribute_prompted: bool,
+    pub csc_contribute_dismissed: bool,
+    pub csc_contribute_in_progress: bool,
+    pub csc_contribute_status: String,
+    pub csc_contribute_pr_url: Option<String>,
+    pub csc_contribute_rx: Option<std::sync::mpsc::Receiver<crate::ui::csc_contribute::ContributeResult>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -393,6 +658,48 @@ pub struct CrossChapterSnapshot {
     pub total_pages: usize,
     pub from_page: usize,
     pub title: String,
+}
+
+pub type TxtConvertSlot = Arc<Mutex<Option<Result<reader_core::txt::ConvertResult, String>>>>;
+
+/// TXT 导入对话框状态。
+pub struct TxtImportState {
+    pub txt_path: PathBuf,
+    pub title: String,
+    pub author: String,
+    pub custom_regex: String,
+    pub use_heuristic: bool,
+    pub previews: Vec<reader_core::txt::ChapterPreview>,
+    pub converting: bool,
+    pub error: Option<String>,
+    /// 后台转换结果回传。
+    pub result_slot: Option<TxtConvertSlot>,
+}
+
+impl TxtImportState {
+    pub fn new(txt_path: PathBuf) -> Self {
+        let title = txt_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+
+        // 立即做一次预览
+        let config = reader_core::txt::SplitConfig::default();
+        let previews = reader_core::txt::preview_chapters(&txt_path, &config).unwrap_or_default();
+
+        Self {
+            txt_path,
+            title,
+            author: String::new(),
+            custom_regex: String::new(),
+            use_heuristic: false,
+            previews,
+            converting: false,
+            error: None,
+            result_slot: None,
+        }
+    }
 }
 
 impl Default for ReaderApp {
@@ -431,7 +738,7 @@ impl Default for ReaderApp {
             reader_bg_image_path: None,
             reader_bg_image_alpha: 0.22,
             reader_bg_texture: None,
-            show_reader_settings: false,
+            show_settings: false,
             show_toc: true,
             scroll_to_top: false,
             error_msg: None,
@@ -452,6 +759,7 @@ impl Default for ReaderApp {
             page_anim_cross_chapter: false,
             page_anim_cross_chapter_snapshot: None,
             is_dual_column: false,
+            paging_page_rect: None,
             embedded_font_names: Vec::new(),
             embedded_fonts_registered: true,
             defer_custom_font_for_frame: false,
@@ -492,23 +800,130 @@ impl Default for ReaderApp {
             _update_check_slot: None,
             _update_download_slot: None,
             _update_progress: None,
+            txt_import: None,
+            // Typography
+            line_spacing: default_line_spacing(),
+            para_spacing: default_para_spacing(),
+            text_indent: default_text_indent(),
+            // Search
+            show_search: false,
+            search_query: String::new(),
+            search_results: Vec::new(),
+            search_selected: None,
+            // Annotations
+            show_annotations: false,
+            book_config: None,
+            // Export
+            show_export_dialog: false,
+            export_book_id: None,
+            // Stats
+            show_stats: false,
+            reading_session_start: None,
+            // Auto-scroll
+            auto_scroll: false,
+            auto_scroll_speed: 30.0,
+            export_library_path: None,
+            text_selection: None,
+            sel_toolbar_pos: egui::Pos2::ZERO,
+            sel_press_origin: None,
+            clicked_highlight_id: None,
+            hl_note_toolbar_pos: egui::Pos2::ZERO,
+            hl_note_just_opened: false,
+            editing_note_id: None,
+            editing_note_buf: String::new(),
+            // TTS
+            tts_playing: false,
+            tts_paused: false,
+            tts_voice_name: "zh-CN-XiaoxiaoNeural".to_string(),
+            tts_rate: 0,
+            tts_volume: 0,
+            tts_current_block: 0,
+            tts_stop_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            tts_audio_sink: None,
+            tts_status: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
+            show_tts_panel: false,
+            tts_pending_audio: None,
+            tts_prefetch_audio: None,
+            tts_prefetch_block: 0,
+            last_egui_ctx: None,
+            // API settings
+            translate_api_url: String::new(),
+            translate_api_key: String::new(),
+            dictionary_api_url: String::new(),
+            dictionary_api_key: String::new(),
+            // CSC
+            csc_mode: reader_core::csc::CorrectionMode::None,
+            csc_threshold: reader_core::csc::CscThreshold::Standard,
+            csc_model_status: reader_core::csc::ModelStatus::NotDownloaded,
+            csc_download_progress: std::sync::Arc::new(std::sync::Mutex::new(0.0)),
+            csc_engine: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            csc_cache: std::collections::HashMap::new(),
+            csc_work_tx: None,
+            csc_result_rx: None,
+            csc_popup: None,
+            csc_custom_replace_buf: String::new(),
+            csc_custom_replace_active: false,
+            // GitHub OAuth
+            github_token: None,
+            github_username: None,
+            github_device_code: None,
+            github_user_code: None,
+            github_oauth_polling: false,
+            github_oauth_interval: 5,
+            github_oauth_expires_at: None,
+            show_github_login: false,
+            github_oauth_status: String::new(),
+            github_pending_device_code: None,
+            github_pending_token_poll: None,
+            github_last_poll: None,
+            // CSC Contribution
+            show_csc_contribute_dialog: false,
+            csc_contribute_prompted: false,
+            csc_contribute_dismissed: false,
+            csc_contribute_in_progress: false,
+            csc_contribute_status: String::new(),
+            csc_contribute_pr_url: None,
+            csc_contribute_rx: None,
         };
 
         if let Some(settings) = AppSettings::load(&app.data_dir) {
+            app.push_feedback_log(format!("[Init] settings loaded: lang={}, font={}, font_size={}, scroll_mode={}, last_book={:?}, ch={}",
+                settings.language, settings.reader_font_family, settings.font_size, settings.scroll_mode,
+                settings.last_book_path.as_deref().unwrap_or("none"), settings.last_chapter));
             settings.apply_to_app(&mut app);
             app.embedded_fonts_registered = false;
             app.pages_dirty = true;
+            // Restore github token
+            if app.github_username.is_some() {
+                let has_token = app.github_token.is_some();
+                app.push_feedback_log(format!("[Init] github_username={:?}, token_restored={}", app.github_username, has_token));
+            }
             // 自动恢复上次阅读的书籍
             if let Some(ref path) = settings.last_book_path.clone() {
                 if std::path::Path::new(path).exists() {
+                    app.push_feedback_log(format!("[Init] restoring last book: {}", path));
                     app.open_book_from_path(path, Some(settings.last_chapter));
+                } else {
+                    app.push_feedback_log(format!("[Init] last book not found: {}", path));
                 }
             }
+        } else {
+            app.push_feedback_log("[Init] no saved settings found, using defaults");
+        }
+        // 检查CSC模型状态
+        app.csc_check_model_status();
+        // Auto-load CSC model if downloaded and correction mode enabled
+        if app.csc_model_status == reader_core::csc::ModelStatus::Downloaded
+            && app.csc_mode != reader_core::csc::CorrectionMode::None
+        {
+            app.push_feedback_log("[Init] auto-loading CSC model");
+            app.csc_load_model();
         }
         if app.auto_start_sharing {
+            app.push_feedback_log("[Init] auto-starting sharing server");
             app.start_sharing_server();
         }
-        app.push_feedback_log("app initialized");
+        app.push_feedback_log(format!("[Init] app initialized (data_dir={})", app.data_dir));
         app.last_saved_settings = Some(AppSettings::from_app(&app));
 
         // ── 启动时检查更新 ──
@@ -590,17 +1005,31 @@ impl ReaderApp {
 
     pub fn open_file_dialog(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
+            .add_filter("EPUB / TXT", &["epub", "txt"])
             .add_filter("EPUB", &["epub"])
+            .add_filter("TXT", &["txt"])
             .pick_file()
         {
-            let path_str = path.to_string_lossy().to_string();
-            self.open_book_from_path(&path_str, None);
+            let is_txt = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("txt"))
+                .unwrap_or(false);
+
+            if is_txt {
+                self.txt_import = Some(TxtImportState::new(path));
+            } else {
+                let path_str = path.to_string_lossy().to_string();
+                self.open_book_from_path(&path_str, None);
+            }
         }
     }
 
     pub fn open_book_from_path(&mut self, path: &str, chapter: Option<usize>) {
+        self.push_feedback_log(format!("[Book] open_book_from_path: path={}, chapter={:?}", path, chapter));
         match EpubBook::open(path) {
             Ok(mut book) => {
+                self.push_feedback_log(format!("[Book] opened: title={}, chapters={}, fonts={}", book.title, book.chapters.len(), book.fonts.len()));
                 let mut ch = chapter.unwrap_or(0);
                 if !book.chapters.is_empty() {
                     ch = ch.min(book.chapters.len() - 1);
@@ -647,8 +1076,24 @@ impl ReaderApp {
                 self.current_page = 0;
                 self.view = AppView::Reader;
                 self.error_msg = None;
+                // Load annotation config and start reading timer
+                self.book_config =
+                    reader_core::library::Library::read_book_config(&self.data_dir, &entry.id);
+                self.reading_session_start = Some(reader_core::now_secs());
+                self.push_feedback_log(format!("[Book] ready: chapter={}/{}, embedded_fonts={}, path={}", ch, self.total_chapters(), self.embedded_font_names.len(), entry.path));
+                // Trigger CSC correction for current + adjacent chapters
+                self.csc_cache.clear();
+                self.csc_trigger_chapter(ch);
+                let total = self.total_chapters();
+                if ch > 0 {
+                    self.csc_trigger_chapter(ch - 1);
+                }
+                if ch + 1 < total {
+                    self.csc_trigger_chapter(ch + 1);
+                }
             }
             Err(e) => {
+                self.push_feedback_log(format!("[Book] ERROR opening {}: {}", path, e));
                 self.error_msg = Some(e);
             }
         }
@@ -674,6 +1119,16 @@ impl ReaderApp {
                 self.library
                     .update_chapter(&self.data_dir, p, self.current_chapter, chap_title);
             }
+            // Trigger CSC for this chapter + prefetch prev & next
+            self.csc_trigger_chapter(self.current_chapter);
+            if self.current_chapter > 0 {
+                self.csc_trigger_chapter(self.current_chapter - 1);
+            }
+            if self.current_chapter + 1 < total {
+                self.csc_trigger_chapter(self.current_chapter + 1);
+            }
+            // Check if user should be prompted to contribute
+            self.csc_check_contribution_prompt();
         }
     }
 
@@ -692,6 +1147,179 @@ impl ReaderApp {
                 self.library
                     .update_chapter(&self.data_dir, p, self.current_chapter, chap_title);
             }
+            // Trigger CSC for this chapter + prefetch prev & next
+            let total = self.total_chapters();
+            self.csc_trigger_chapter(self.current_chapter);
+            if self.current_chapter > 0 {
+                self.csc_trigger_chapter(self.current_chapter - 1);
+            }
+            if self.current_chapter + 1 < total {
+                self.csc_trigger_chapter(self.current_chapter + 1);
+            }
+            // Check if user should be prompted to contribute
+            self.csc_check_contribution_prompt();
+        }
+    }
+
+    // ── CSC background processing ──
+
+    /// Spawn a background worker thread for CSC inference.
+    /// The worker owns the engine lock and processes chapters sent via channel.
+    pub fn csc_spawn_worker(&mut self) {
+        let (work_tx, work_rx) = std::sync::mpsc::channel::<CscWork>();
+        let (result_tx, result_rx) = std::sync::mpsc::channel::<CscResult>();
+        let engine = self.csc_engine.clone();
+        let logs = self.feedback_logs.clone();
+
+        std::thread::spawn(move || {
+            while let Ok(work) = work_rx.recv() {
+                let start = std::time::Instant::now();
+                let mut corrections = Vec::new();
+                if let Ok(mut guard) = engine.lock() {
+                    if let Some(ref mut eng) = *guard {
+                        eng.mode = work.mode;
+                        eng.threshold = work.threshold;
+                        for (block_idx, text) in &work.blocks {
+                            let corrs = eng.check(text);
+                            if !corrs.is_empty() {
+                                corrections.push((*block_idx, corrs));
+                            }
+                        }
+                    }
+                }
+                let elapsed = start.elapsed().as_secs_f32();
+                let total: usize = corrections.iter().map(|(_, c)| c.len()).sum();
+                dbg_log(&logs, format!(
+                    "[CSC] chapter {} done: {:.1}s, {} corrections in {} blocks",
+                    work.chapter, elapsed, total, corrections.len(),
+                ));
+                let _ = result_tx.send(CscResult {
+                    chapter: work.chapter,
+                    corrections,
+                });
+            }
+        });
+
+        self.csc_work_tx = Some(work_tx);
+        self.csc_result_rx = Some(result_rx);
+    }
+
+    /// Queue a chapter for background CSC processing.
+    /// Skips if mode is None, engine not ready, or chapter already cached.
+    pub fn csc_trigger_chapter(&mut self, chapter_idx: usize) {
+        use reader_core::csc::CorrectionMode;
+        use reader_core::epub::ContentBlock;
+
+        if self.csc_mode == CorrectionMode::None {
+            return;
+        }
+        // Check engine is loaded
+        {
+            let guard = self.csc_engine.lock().unwrap();
+            if guard.is_none() || !guard.as_ref().unwrap().is_ready() {
+                return;
+            }
+        }
+        // Skip if already cached
+        if self.csc_cache.keys().any(|(ch, _)| *ch == chapter_idx) {
+            return;
+        }
+
+        // Extract block texts
+        let block_texts: Vec<(usize, String)> = if let Some(book) = &self.book {
+            if let Some(chapter) = book.chapters.get(chapter_idx) {
+                chapter
+                    .blocks
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, block)| {
+                        let spans = match block {
+                            ContentBlock::Paragraph { spans } => spans,
+                            ContentBlock::Heading { spans, .. } => spans,
+                            _ => return None,
+                        };
+                        let text: String =
+                            spans.iter().map(|s| s.text.as_str()).collect();
+                        if text.trim().is_empty() {
+                            None
+                        } else {
+                            Some((i, text))
+                        }
+                    })
+                    .collect()
+            } else {
+                return;
+            }
+        } else {
+            return;
+        };
+
+        if block_texts.is_empty() {
+            return;
+        }
+
+        self.push_feedback_log(format!(
+            "[CSC] trigger ch {} ({} text blocks)",
+            chapter_idx,
+            block_texts.len(),
+        ));
+
+        if let Some(tx) = &self.csc_work_tx {
+            let _ = tx.send(CscWork {
+                chapter: chapter_idx,
+                blocks: block_texts,
+                mode: self.csc_mode.clone(),
+                threshold: self.csc_threshold.clone(),
+            });
+        }
+    }
+
+    /// Poll CSC worker results and merge into cache.
+    pub fn csc_poll_results(&mut self) {
+        if let Some(rx) = &self.csc_result_rx {
+            while let Ok(result) = rx.try_recv() {
+                for (block_idx, corrections) in result.corrections {
+                    self.csc_cache
+                        .insert((result.chapter, block_idx), corrections);
+                }
+            }
+        }
+    }
+
+    /// Record elapsed reading time into the book config.
+    pub fn flush_reading_stats(&mut self) {
+        let Some(start) = self.reading_session_start.take() else {
+            return;
+        };
+        let elapsed = reader_core::now_secs().saturating_sub(start);
+        if elapsed < 5 {
+            return;
+        }
+        if let Some(cfg) = &mut self.book_config {
+            let stats = cfg.reading_stats.get_or_insert_with(Default::default);
+            stats.total_seconds += elapsed;
+            let today = {
+                let secs = reader_core::now_secs();
+                let days = secs / 86400;
+                format!("{}", days) // simple day-key
+            };
+            if let Some(session) = stats.sessions.iter_mut().find(|s| s.date == today) {
+                session.seconds += elapsed;
+            } else {
+                stats.sessions.push(reader_core::library::ReadingSession {
+                    date: today,
+                    seconds: elapsed,
+                });
+            }
+            cfg.save(&self.data_dir);
+        }
+    }
+
+    /// Save current book_config to disk.
+    #[allow(dead_code)]
+    pub fn save_book_config(&self) {
+        if let Some(cfg) = &self.book_config {
+            cfg.save(&self.data_dir);
         }
     }
 
@@ -930,6 +1558,17 @@ impl ReaderApp {
 
 impl eframe::App for ReaderApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.last_egui_ctx = Some(ctx.clone());
+        // --- Poll TTS audio ---
+        self.tts_poll_audio();
+        // --- Poll CSC model download ---
+        self.csc_poll_download();
+        // --- Poll GitHub OAuth ---
+        self.github_poll_device_code();
+        self.github_poll_token();
+        self.github_poll_token_result();
+        // --- Poll CSC Contribution ---
+        self.csc_poll_contribution();
         // --- Check async font discovery result ---
         if self.system_font_names.is_empty() {
             if let Ok(mut slot) = self.font_discovery_result.lock() {
@@ -940,6 +1579,9 @@ impl eframe::App for ReaderApp {
             }
         }
 
+        // --- Poll CSC background results ---
+        self.csc_poll_results();
+
         // --- Poll startup update check result ---
         if matches!(self.update_state, UpdateState::Checking) {
             if let Some(ref slot) = self._update_check_slot {
@@ -947,11 +1589,13 @@ impl eframe::App for ReaderApp {
                     if let Some(ref state) = *s {
                         match state {
                             UpdateState::Available(tag) => {
+                                self.push_feedback_log(format!("[Update] new version available: {}", tag));
                                 self.update_latest_tag = Some(tag.clone());
                                 self.show_update_dialog = true;
                                 self.update_state = UpdateState::Available(tag.clone());
                             }
                             _ => {
+                                self.push_feedback_log("[Update] app is up to date");
                                 self.update_state = state.clone();
                             }
                         }
@@ -1243,6 +1887,33 @@ impl eframe::App for ReaderApp {
                 self.reader_font_family = "Sans".to_string();
             }
 
+            // Emoji / symbol fallback font
+            let emoji_paths: &[&str] = &[
+                "C:\\Windows\\Fonts\\seguisym.ttf",
+                "C:\\Windows\\Fonts\\seguiemj.ttf",
+                "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+                "/System/Library/Fonts/Apple Color Emoji.ttc",
+            ];
+            for path in emoji_paths {
+                if let Ok(data) = std::fs::read(path) {
+                    fonts.font_data.insert(
+                        "emoji_font".to_owned(),
+                        egui::FontData::from_owned(data).into(),
+                    );
+                    fonts
+                        .families
+                        .entry(egui::FontFamily::Proportional)
+                        .or_default()
+                        .push("emoji_font".to_owned());
+                    fonts
+                        .families
+                        .entry(egui::FontFamily::Monospace)
+                        .or_default()
+                        .push("emoji_font".to_owned());
+                    break;
+                }
+            }
+
             ctx.set_fonts(fonts);
             self.pages_dirty = true;
             // Font definitions take effect next frame. Keep rendering, but temporarily
@@ -1256,7 +1927,7 @@ impl eframe::App for ReaderApp {
             ctx.request_repaint();
         }
 
-        if self.view == AppView::Reader && !self.show_reader_settings && !self.show_sharing_panel {
+        if self.view == AppView::Reader && !self.show_sharing_panel {
             ctx.input(|i| {
                 if i.key_pressed(egui::Key::ArrowLeft) {
                     if self.scroll_mode {
@@ -1306,7 +1977,6 @@ impl eframe::App for ReaderApp {
                 });
         }
 
-        let show_reader_settings_at_frame_start = self.show_reader_settings;
         if self.view == AppView::Reader {
             self.ensure_reader_bg_texture(ctx);
             egui::TopBottomPanel::top("toolbar")
@@ -1323,6 +1993,11 @@ impl eframe::App for ReaderApp {
                 .show(ctx, |ui| {
                     self.render_toolbar(ui);
                 });
+
+            // TTS bar (between toolbar and content, Edge-style)
+            if self.show_tts_panel {
+                self.render_tts_bar(ctx);
+            }
 
             if self.show_toc && self.book.is_some() {
                 egui::SidePanel::left("toc_panel")
@@ -1351,6 +2026,14 @@ impl eframe::App for ReaderApp {
         } else {
             egui::Color32::from_rgb(250, 246, 238)
         };
+
+        // ── Side-panels (rendered before CentralPanel) ──
+        self.render_search_panel(ctx);
+        self.render_annotations_panel(ctx);
+        if self.show_settings {
+            self.render_settings_panel(ctx);
+        }
+
         egui::CentralPanel::default()
             .frame(egui::Frame::default().fill(reader_fill))
             .show(ctx, |ui| match self.view {
@@ -1358,321 +2041,9 @@ impl eframe::App for ReaderApp {
                 AppView::Reader => self.render_reader(ui),
             });
 
-        if self.show_reader_settings {
-            let mut should_close_settings = false;
-            let mut settings_rect: Option<egui::Rect> = None;
-
-            let window_resp = egui::Window::new(self.i18n.t("settings.title"))
-                .collapsible(false)
-                .resizable(true)
-                .default_width(460.0)
-                .frame(
-                    egui::Frame::window(&ctx.style())
-                        .corner_radius(12.0)
-                        .inner_margin(egui::Margin::same(14)),
-                )
-                .show(ctx, |ui| {
-                    ui.heading(self.i18n.t("settings.title"));
-                    ui.add_space(8.0);
-
-                    ui.horizontal(|ui| {
-                        ui.label(self.i18n.t("settings.language"));
-                        let current_label = self.i18n.language().label().to_string();
-                        egui::ComboBox::from_id_salt("language_combo")
-                            .selected_text(&current_label)
-                            .show_ui(ui, |ui| {
-                                for lang in Language::all() {
-                                    if ui
-                                        .selectable_label(
-                                            self.i18n.language() == lang,
-                                            lang.label(),
-                                        )
-                                        .clicked()
-                                    {
-                                        self.i18n.set_language(lang.clone());
-                                    }
-                                }
-                            });
-                    });
-
-                    ui.add_space(8.0);
-
-                    ui.group(|ui| {
-                        ui.label(egui::RichText::new(self.i18n.t("settings.typography")).strong());
-                        ui.add_space(6.0);
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                self.i18n
-                                    .tf1("settings.font_size", &format!("{:.0}", self.font_size)),
-                            );
-                            if ui
-                                .add_sized(
-                                    [240.0, 18.0],
-                                    egui::Slider::new(&mut self.font_size, 12.0..=40.0),
-                                )
-                                .changed()
-                            {
-                                self.pages_dirty = true;
-                            }
-                        });
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(self.i18n.t("settings.reading_mode"));
-                            if ui
-                                .selectable_label(self.scroll_mode, self.i18n.t("settings.scroll"))
-                                .clicked()
-                            {
-                                self.scroll_mode = true;
-                                self.pages_dirty = true;
-                            }
-                            if ui
-                                .selectable_label(!self.scroll_mode, self.i18n.t("settings.paging"))
-                                .clicked()
-                            {
-                                self.scroll_mode = false;
-                                self.pages_dirty = true;
-                            }
-                        });
-                    });
-
-                    ui.add_space(8.0);
-                    ui.group(|ui| {
-                        ui.label(egui::RichText::new(self.i18n.t("settings.visual")).strong());
-                        ui.add_space(6.0);
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(self.i18n.t("settings.bg_color"));
-                            let presets = [
-                                Color32::from_rgb(250, 246, 238),
-                                Color32::from_rgb(241, 243, 245),
-                                Color32::from_rgb(232, 240, 232),
-                                Color32::from_rgb(26, 26, 28),
-                                Color32::from_rgb(36, 38, 43),
-                            ];
-                            for p in presets {
-                                let mut btn = egui::Button::new(" ")
-                                    .fill(p)
-                                    .min_size(egui::vec2(22.0, 22.0));
-                                if self.reader_bg_color == p {
-                                    btn = btn.stroke(egui::Stroke::new(2.0, Color32::LIGHT_BLUE));
-                                }
-                                if ui.add(btn).clicked() {
-                                    self.reader_bg_color = p;
-                                }
-                            }
-                            egui::color_picker::color_edit_button_srgba(
-                                ui,
-                                &mut self.reader_bg_color,
-                                egui::color_picker::Alpha::Opaque,
-                            );
-                        });
-
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(self.i18n.t("settings.font_color"));
-                            if ui
-                                .selectable_label(
-                                    self.reader_font_color.is_none(),
-                                    self.i18n.t("settings.auto"),
-                                )
-                                .clicked()
-                            {
-                                self.reader_font_color = None;
-                            }
-                            if ui
-                                .selectable_label(
-                                    self.reader_font_color.is_some(),
-                                    self.i18n.t("settings.custom"),
-                                )
-                                .clicked()
-                                && self.reader_font_color.is_none()
-                            {
-                                self.reader_font_color = Some(Color32::from_gray(30));
-                            }
-                            if let Some(ref mut color) = self.reader_font_color {
-                                egui::color_picker::color_edit_button_srgba(
-                                    ui,
-                                    color,
-                                    egui::color_picker::Alpha::Opaque,
-                                );
-                            }
-                        });
-
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(self.i18n.t("settings.font"));
-                            let font_popup_id = ui.make_persistent_id("font_family_popup");
-                            let btn = ui.button(&self.reader_font_family);
-                            if btn.clicked() {
-                                ui.memory_mut(|m| m.toggle_popup(font_popup_id));
-                            }
-                            egui::popup_below_widget(
-                                ui,
-                                font_popup_id,
-                                &btn,
-                                egui::PopupCloseBehavior::CloseOnClickOutside,
-                                |ui| {
-                                    ui.set_min_width(220.0);
-                                    let te = ui.text_edit_singleline(&mut self.font_search);
-                                    if btn.clicked() {
-                                        te.request_focus();
-                                    }
-                                    let query = self.font_search.to_lowercase();
-                                    let mut close_popup = false;
-                                    egui::ScrollArea::vertical()
-                                        .max_height(300.0)
-                                        .show(ui, |ui| {
-                                            for fam in ["Sans", "Serif", "Monospace"] {
-                                                if (query.is_empty()
-                                                    || fam.to_lowercase().contains(&query))
-                                                    && ui
-                                                        .selectable_label(
-                                                            self.reader_font_family == fam,
-                                                            fam,
-                                                        )
-                                                        .clicked()
-                                                {
-                                                    self.reader_font_family = fam.to_string();
-                                                    self.pages_dirty = true;
-                                                    self.embedded_fonts_registered = false;
-                                                    close_popup = true;
-                                                }
-                                            }
-                                            let sys_filtered: Vec<String> = self
-                                                .system_font_names
-                                                .iter()
-                                                .filter(|n| {
-                                                    query.is_empty()
-                                                        || n.to_lowercase().contains(&query)
-                                                })
-                                                .cloned()
-                                                .collect();
-                                            if !sys_filtered.is_empty() {
-                                                ui.separator();
-                                                for name in sys_filtered {
-                                                    if ui
-                                                        .selectable_label(
-                                                            self.reader_font_family == name,
-                                                            &name,
-                                                        )
-                                                        .clicked()
-                                                    {
-                                                        self.reader_font_family = name;
-                                                        self.pages_dirty = true;
-                                                        self.embedded_fonts_registered = false;
-                                                        close_popup = true;
-                                                    }
-                                                }
-                                            }
-                                            let emb_filtered: Vec<String> = self
-                                                .embedded_font_names
-                                                .iter()
-                                                .filter(|n| {
-                                                    query.is_empty()
-                                                        || n.to_lowercase().contains(&query)
-                                                })
-                                                .cloned()
-                                                .collect();
-                                            if !emb_filtered.is_empty() {
-                                                ui.separator();
-                                                for name in emb_filtered {
-                                                    if ui
-                                                        .selectable_label(
-                                                            self.reader_font_family == name,
-                                                            &name,
-                                                        )
-                                                        .clicked()
-                                                    {
-                                                        self.reader_font_family = name;
-                                                        self.pages_dirty = true;
-                                                        self.embedded_fonts_registered = false;
-                                                        close_popup = true;
-                                                    }
-                                                }
-                                            }
-                                        });
-                                    if close_popup {
-                                        ui.memory_mut(|m| m.close_popup());
-                                    }
-                                },
-                            );
-                        });
-
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(self.i18n.t("settings.page_animation"));
-                            for mode in ["Slide", "Cover", "None"] {
-                                let label = match mode {
-                                    "Slide" => self.i18n.t("settings.slide"),
-                                    "Cover" => self.i18n.t("settings.cover"),
-                                    _ => self.i18n.t("settings.none"),
-                                };
-                                if ui
-                                    .selectable_label(self.reader_page_animation == mode, label)
-                                    .clicked()
-                                {
-                                    self.reader_page_animation = mode.to_string();
-                                }
-                            }
-                        });
-                        if self.reader_page_animation != "None" {
-                            ui.add_space(4.0);
-                            ui.label(self.i18n.t("settings.animation_speed"));
-                            ui.add_sized(
-                                [280.0, 18.0],
-                                egui::Slider::new(
-                                    &mut self.reader_page_animation_speed,
-                                    0.04..=0.40,
-                                )
-                                .step_by(0.02),
-                            );
-                        }
-                    });
-
-                    ui.add_space(8.0);
-                    ui.group(|ui| {
-                        ui.label(egui::RichText::new(self.i18n.t("settings.bg_image")).strong());
-                        ui.add_space(6.0);
-                        ui.horizontal(|ui| {
-                            if ui.button(self.i18n.t("settings.pick_bg_image")).clicked() {
-                                self.pick_reader_background_image();
-                            }
-                            if ui.button(self.i18n.t("settings.clear_bg_image")).clicked() {
-                                self.clear_reader_background_image();
-                            }
-                        });
-                        ui.label(self.i18n.tf1(
-                            "settings.opacity",
-                            &format!("{}", (self.reader_bg_image_alpha * 100.0) as i32),
-                        ));
-                        ui.add_sized(
-                            [280.0, 18.0],
-                            egui::Slider::new(&mut self.reader_bg_image_alpha, 0.0..=1.0),
-                        );
-                    });
-
-                    ui.add_space(10.0);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(self.i18n.t("settings.close")).clicked() {
-                            should_close_settings = true;
-                        }
-                    });
-                });
-
-            if let Some(resp) = window_resp {
-                settings_rect = Some(resp.response.rect);
-            }
-
-            // 点击弹窗外区域自动关闭。避免"刚打开就关闭"：只在该帧开始时已打开时启用。
-            if show_reader_settings_at_frame_start && ctx.input(|i| i.pointer.primary_clicked()) {
-                if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
-                    if let Some(rect) = settings_rect {
-                        if !rect.contains(pos) {
-                            should_close_settings = true;
-                        }
-                    }
-                }
-            }
-
-            if should_close_settings {
-                self.show_reader_settings = false;
-            }
-        }
+        // ── Floating windows ──
+        self.render_export_dialog(ctx);
+        self.render_stats_window(ctx);
 
         // ── Sharing Panel ──
         if self.show_sharing_panel {
@@ -1682,6 +2053,16 @@ impl eframe::App for ReaderApp {
         // ── About Window ──
         if self.show_about {
             self.render_about(ctx);
+        }
+
+        // ── CSC Contribute Dialog ──
+        if self.show_csc_contribute_dialog {
+            self.render_csc_contribute_dialog(ctx);
+        }
+
+        // ── TXT Import ──
+        if self.txt_import.is_some() {
+            self.render_txt_import(ctx);
         }
 
         let settings = AppSettings::from_app(self);

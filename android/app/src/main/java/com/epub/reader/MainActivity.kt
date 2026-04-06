@@ -21,7 +21,11 @@ import androidx.compose.ui.platform.LocalUriHandler
 import com.zhongbai233.epub.reader.ui.library.AboutScreen
 import com.zhongbai233.epub.reader.ui.library.LibraryScreen
 import com.zhongbai233.epub.reader.ui.library.SharingDialog
+import com.zhongbai233.epub.reader.ui.library.TxtImportDialog
 import com.zhongbai233.epub.reader.ui.reader.ReaderScreen
+import com.zhongbai233.epub.reader.ui.reader.SearchDialog
+import com.zhongbai233.epub.reader.ui.reader.ContributeDialog
+import com.zhongbai233.epub.reader.ui.reader.AnnotationsSheet
 import com.zhongbai233.epub.reader.ui.reader.TocDrawerContent
 import com.zhongbai233.epub.reader.ui.theme.EpubReaderTheme
 import com.zhongbai233.epub.reader.viewmodel.ReaderViewModel
@@ -191,6 +195,25 @@ private fun MainContent(vm: ReaderViewModel) {
                     },
                 )
                 } // end else (showAboutScreen)
+
+                // ── TXT 导入对话框 ──
+                TxtImportDialog(
+                    show = vm.showTxtImport,
+                    title = vm.txtImportTitle,
+                    author = vm.txtImportAuthor,
+                    customRegex = vm.txtImportRegex,
+                    useHeuristic = vm.txtImportHeuristic,
+                    previews = vm.txtImportPreviews,
+                    converting = vm.txtImportConverting,
+                    error = vm.txtImportError,
+                    onTitleChange = { vm.txtImportTitle = it },
+                    onAuthorChange = { vm.txtImportAuthor = it },
+                    onRegexChange = { vm.txtImportRegex = it },
+                    onHeuristicChange = { vm.txtImportHeuristic = it },
+                    onRefreshPreview = { vm.refreshTxtPreviews() },
+                    onConvert = { vm.convertTxtToEpub() },
+                    onDismiss = { vm.dismissTxtImport() },
+                )
             } else {
                 // ---- 阅读器界面（包裹在目录抽屉中）----
                 ModalNavigationDrawer(
@@ -257,7 +280,68 @@ private fun MainContent(vm: ReaderViewModel) {
                         onClearBackgroundImage = { vm.updateReaderBgImage(null) },
                         onToggleToc = {
                             scope.launch { drawerState.open() }
-                        }
+                        },
+                        onToggleSearch = { vm.showSearch = !vm.showSearch },
+                        isChapterBookmarked = vm.isChapterBookmarked,
+                        onToggleBookmark = { vm.toggleBookmark() },
+                        onShowAnnotations = { vm.showAnnotationsPanel = true },
+                        highlights = vm.bookConfig?.highlights ?: emptyList(),
+                        notes = vm.bookConfig?.notes ?: emptyList(),
+                        onAddHighlight = { ch, sb, so, eb, eo, color ->
+                            vm.addHighlight(ch, sb, so, eb, eo, color)
+                        },
+                        onSaveNote = { hlId, content -> vm.saveNote(hlId, content) }
+                    )
+
+                    // 标注面板
+                    if (vm.showAnnotationsPanel) {
+                        AnnotationsSheet(
+                            bookmarks = vm.bookConfig?.bookmarks ?: emptyList(),
+                            highlights = vm.bookConfig?.highlights ?: emptyList(),
+                            notes = vm.bookConfig?.notes ?: emptyList(),
+                            corrections = vm.bookConfig?.corrections ?: emptyList(),
+                            chapters = book.chapters.map { it.title },
+                            onNavigateToChapter = { ch ->
+                                vm.goToChapter(ch)
+                                vm.showAnnotationsPanel = false
+                            },
+                            onRemoveBookmark = { chapter ->
+                                vm.removeBookmarkForChapter(chapter)
+                            },
+                            onRemoveHighlight = { hlId -> vm.removeHighlight(hlId) },
+                            onEditNote = { hlId, content -> vm.saveNote(hlId, content) },
+                            onDismiss = { vm.showAnnotationsPanel = false }
+                        )
+                    }
+
+                    SearchDialog(
+                        visible = vm.showSearch,
+                        query = vm.searchQuery,
+                        results = vm.searchResults,
+                        onQueryChange = { vm.searchQuery = it },
+                        onSearch = { vm.performSearch(it) },
+                        onResultClick = { chapterIdx ->
+                            vm.goToChapter(chapterIdx)
+                            vm.showSearch = false
+                        },
+                        onDismiss = { vm.showSearch = false }
+                    )
+
+                    ContributeDialog(
+                        show = vm.showContributeDialog,
+                        sampleCount = vm.contributeSampleCount,
+                        samples = vm.contributeSamples,
+                        githubUsername = vm.githubUsername,
+                        githubUserCode = vm.githubUserCode,
+                        githubVerificationUri = vm.githubVerificationUri,
+                        githubAuthPolling = vm.githubAuthPolling,
+                        inProgress = vm.contributeInProgress,
+                        status = vm.contributeStatus,
+                        prUrl = vm.contributePrUrl,
+                        onPrepare = { vm.prepareContribution() },
+                        onLogin = { vm.startGitHubLogin() },
+                        onSubmit = { vm.submitContribution() },
+                        onDismiss = { vm.dismissContributeDialog() }
                     )
                 }
             }

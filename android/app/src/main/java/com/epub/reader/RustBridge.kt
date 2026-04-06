@@ -39,4 +39,22 @@ object RustBridge {
     external fun getSyncedProgress(dataDir: String): String?
     external fun fileHash(path: String): String?
     external fun readEpubMetadata(path: String): String?
+
+    // TXT → EPUB
+    external fun previewTxtChapters(txtPath: String, useHeuristic: Boolean, customRegex: String?): String?
+    external fun convertTxtToEpub(txtPath: String, outputDir: String, title: String?, author: String?, useHeuristic: Boolean, customRegex: String?): String?
+
+    // Search
+    external fun searchBook(path: String, query: String): String?
+
+    // Bookmarks / Highlights / Notes
+    external fun getBookConfig(dataDir: String, bookId: String): String?
+    external fun toggleBookmark(dataDir: String, bookId: String, chapter: Int): String?
+    external fun addHighlight(dataDir: String, bookId: String, jsonPayload: String): String?
+    external fun removeHighlight(dataDir: String, bookId: String, highlightId: String)
+    external fun saveNote(dataDir: String, bookId: String, highlightId: String, content: String)
+
+    // CSC Contribution
+    external fun getCscCorrectionCount(dataDir: String, bookId: String): Int
+    external fun collectCscSamples(dataDir: String, bookPath: String, bookId: String): String?
 }

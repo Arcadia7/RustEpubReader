@@ -5,6 +5,80 @@ use uuid::Uuid;
 
 use crate::now_secs;
 
+// ── Annotation / Stats types ──
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Bookmark {
+    pub chapter: usize,
+    pub block: usize,
+    pub created_at: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub enum HighlightColor {
+    #[default]
+    Yellow,
+    Green,
+    Blue,
+    Pink,
+}
+
+impl HighlightColor {
+    pub fn css_class(&self) -> &'static str {
+        match self {
+            Self::Yellow => "highlight-yellow",
+            Self::Green => "highlight-green",
+            Self::Blue => "highlight-blue",
+            Self::Pink => "highlight-pink",
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Highlight {
+    pub id: String,
+    pub chapter: usize,
+    pub start_block: usize,
+    pub start_offset: usize,
+    pub end_block: usize,
+    pub end_offset: usize,
+    pub color: HighlightColor,
+    pub created_at: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Note {
+    pub highlight_id: String,
+    pub content: String,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CorrectionRecord {
+    pub chapter: usize,
+    pub block_idx: usize,
+    pub char_offset: usize,
+    pub original: String,
+    pub corrected: String,
+    pub status: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ReadingStats {
+    pub total_seconds: u64,
+    #[serde(default)]
+    pub sessions: Vec<ReadingSession>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ReadingSession {
+    pub date: String,
+    pub seconds: u64,
+}
+
+// ── Core types ──
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BookEntry {
     #[serde(default)]
@@ -44,6 +118,27 @@ pub struct BookConfig {
     pub file_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<crate::epub::EpubMetadata>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bookmarks: Vec<Bookmark>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub highlights: Vec<Highlight>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<Note>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub corrections: Vec<CorrectionRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reading_stats: Option<ReadingStats>,
+}
+
+impl BookConfig {
+    pub fn save(&self, data_dir: &str) {
+        let dir = PathBuf::from(data_dir).join("books");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("{}.json", self.id));
+        if let Ok(data) = serde_json::to_string_pretty(self) {
+            let _ = std::fs::write(path, data);
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
@@ -444,6 +539,13 @@ impl Library {
         let metadata =
             cached_metadata.or_else(|| crate::epub::EpubBook::read_metadata(&entry.path));
 
+        // Preserve annotation data from existing config
+        let bookmarks = existing.as_ref().map(|c| c.bookmarks.clone()).unwrap_or_default();
+        let highlights = existing.as_ref().map(|c| c.highlights.clone()).unwrap_or_default();
+        let notes = existing.as_ref().map(|c| c.notes.clone()).unwrap_or_default();
+        let corrections = existing.as_ref().map(|c| c.corrections.clone()).unwrap_or_default();
+        let reading_stats = existing.as_ref().and_then(|c| c.reading_stats.clone());
+
         let cfg = BookConfig {
             id: entry.id.clone(),
             title: entry.title.clone(),
@@ -456,6 +558,11 @@ impl Library {
             settings,
             file_hash,
             metadata,
+            bookmarks,
+            highlights,
+            notes,
+            corrections,
+            reading_stats,
         };
 
         if let Ok(data) = serde_json::to_string_pretty(&cfg) {

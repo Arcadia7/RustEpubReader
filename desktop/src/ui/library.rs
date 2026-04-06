@@ -17,6 +17,7 @@ impl ReaderApp {
     pub fn render_library(&mut self, ui: &mut egui::Ui) {
         let mut action_open_path: Option<(String, usize)> = None;
         let mut action_remove_path: Option<String> = None;
+        let mut action_export_path: Option<String> = None;
         let mut action_open_dialog = false;
 
         let dark = self.dark_mode;
@@ -203,18 +204,28 @@ impl ReaderApp {
                     );
                 });
                 ui.add_space(12.0);
-                let padding = 32.0_f32;
-                let available_width = ui.available_width() - padding * 2.0;
-                let card_width = 260.0_f32;
+                let padding = 24.0_f32;
                 let gap = 16.0_f32;
-                let cols = ((available_width + gap) / (card_width + gap))
+                let available_width = (ui.available_width() - padding * 2.0).max(0.0);
+                // Responsive: determine columns first, then compute card width to fill space
+                let min_card_w = 240.0_f32;
+                let max_card_w = 420.0_f32;
+                let cols = ((available_width + gap) / (min_card_w + gap))
                     .floor()
                     .max(1.0) as usize;
+                let card_width = if cols == 1 {
+                    available_width.min(max_card_w)
+                } else {
+                    ((available_width - gap * (cols as f32 - 1.0)) / cols as f32)
+                        .clamp(min_card_w, max_card_w)
+                };
+                let card_height = (card_width * 0.6).clamp(140.0, 180.0);
+                let cover_w = (card_width * 0.33).clamp(70.0, 100.0);
                 let chunks: Vec<Vec<usize>> = sorted.chunks(cols).map(|c| c.to_vec()).collect();
                 for chunk in &chunks {
                     ui.horizontal(|ui| {
                         ui.add_space(padding);
-                        for &idx in chunk {
+                        for (ci, &idx) in chunk.iter().enumerate() {
                             let entry = &self.library.books[idx];
                             let title = entry.title.clone();
                             let path = entry.path.clone();
@@ -226,7 +237,7 @@ impl ReaderApp {
                             let cover_color = palette[(hash as usize) % palette.len()];
                             let card_id = ui.id().with(("card", idx));
                             let (card_rect, card_response) = ui.allocate_exact_size(
-                                Vec2::new(card_width, 160.0),
+                                Vec2::new(card_width, card_height),
                                 egui::Sense::click(),
                             );
                             let hovered = card_response.hovered();
@@ -246,7 +257,6 @@ impl ReaderApp {
                                 ),
                                 StrokeKind::Outside,
                             );
-                            let cover_w = 86.0_f32;
                             let cover_rect = egui::Rect::from_min_max(
                                 egui::pos2(card_rect.left() + 10.0, card_rect.top() + 8.0),
                                 egui::pos2(
@@ -302,8 +312,10 @@ impl ReaderApp {
                                     .layout(egui::Layout::top_down(egui::Align::LEFT)),
                             );
                             child.add_space(4.0);
-                            let display_title = if title.chars().count() > 14 {
-                                format!("{}…", title.chars().take(13).collect::<String>())
+                            // Dynamic title truncation based on available content width
+                            let max_title_chars = ((content_rect.width() / 11.0) as usize).max(6);
+                            let display_title = if title.chars().count() > max_title_chars {
+                                format!("{}…", title.chars().take(max_title_chars - 1).collect::<String>())
                             } else {
                                 title.clone()
                             };
@@ -342,6 +354,21 @@ impl ReaderApp {
                                     action_open_path = Some((path.clone(), chapter));
                                 }
                                 ui.add_space(4.0);
+                                let export_btn = egui::Button::new(
+                                    egui::RichText::new("↗").size(13.0).color(subtitle_color),
+                                )
+                                .fill(Color32::TRANSPARENT)
+                                .stroke(Stroke::new(1.0, border_color))
+                                .corner_radius(CornerRadius::same(5))
+                                .min_size(Vec2::new(28.0, 28.0));
+                                if ui
+                                    .add(export_btn)
+                                    .on_hover_text(self.i18n.t("toolbar.export"))
+                                    .clicked()
+                                {
+                                    action_export_path = Some(path.clone());
+                                }
+                                ui.add_space(4.0);
                                 let del_btn = egui::Button::new(
                                     egui::RichText::new("🗑").size(13.0).color(subtitle_color),
                                 )
@@ -356,7 +383,10 @@ impl ReaderApp {
                             if card_response.clicked() {
                                 action_open_path = Some((path.clone(), chapter));
                             }
-                            ui.add_space(gap);
+                            // Add gap between cards, not after the last one
+                            if ci < chunk.len() - 1 {
+                                ui.add_space(gap);
+                            }
                         }
                     });
                     ui.add_space(gap);
@@ -369,6 +399,7 @@ impl ReaderApp {
             self.open_file_dialog();
         }
         if let Some(path) = action_remove_path {
+            self.push_feedback_log(format!("[Library] remove book: {}", path));
             self.cover_textures.remove(&path);
             self.library.remove_by_path(&self.data_dir, &path);
             if self.book_path.as_deref() == Some(path.as_str()) {
@@ -378,6 +409,10 @@ impl ReaderApp {
             }
         } else if let Some((path, chapter)) = action_open_path {
             self.open_book_from_path(&path, Some(chapter));
+        }
+        if let Some(path) = action_export_path {
+            self.export_library_path = Some(path);
+            self.show_export_dialog = true;
         }
     }
 }

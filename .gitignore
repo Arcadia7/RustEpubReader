@@ -37,3 +37,4 @@ library.json
 peers.json
 settings.json
 books/
+models/

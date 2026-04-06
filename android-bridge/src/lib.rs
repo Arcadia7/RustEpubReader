@@ -1237,3 +1237,501 @@ pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_readEpubMetadata(
         None => std::ptr::null_mut(),
     }
 }
+
+// ── TXT → EPUB ──────────────────────────────────────────────────
+
+/// Preview TXT chapters. Returns JSON array of {title, lineStart, charCount}.
+/// Parameters: txtPath, useHeuristic (bool), customRegex (nullable string).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_previewTxtChapters(
+    mut env: JNIEnv,
+    _class: JClass,
+    txt_path: JString,
+    use_heuristic: jboolean,
+    custom_regex: JString,
+) -> jstring {
+    let txt_path: String = match env.get_string(&txt_path) {
+        Ok(s) => s.into(),
+        Err(_) => return jni_string_or_null!(env, "[]"),
+    };
+
+    let regex_str: Option<String> = if custom_regex.is_null() {
+        None
+    } else {
+        match env.get_string(&custom_regex) {
+            Ok(s) => {
+                let s: String = s.into();
+                if s.is_empty() { None } else { Some(s) }
+            }
+            Err(_) => None,
+        }
+    };
+
+    let config = reader_core::txt::SplitConfig {
+        min_chapter_chars: 100,
+        use_heuristic: use_heuristic != 0,
+        custom_regex: regex_str,
+    };
+
+    let previews = reader_core::txt::preview_chapters(std::path::Path::new(&txt_path), &config)
+        .unwrap_or_default();
+
+    let json: Vec<serde_json::Value> = previews
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "title": p.title,
+                "lineStart": p.line_start,
+                "charCount": p.char_count,
+            })
+        })
+        .collect();
+
+    jni_string_or_null!(env, serde_json::json!(json).to_string())
+}
+
+/// Convert TXT to EPUB. Returns JSON {epubPath, title, chapterCount} or {error}.
+/// Parameters: txtPath, outputDir, title (nullable), author (nullable),
+///             useHeuristic (bool), customRegex (nullable).
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_convertTxtToEpub(
+    mut env: JNIEnv,
+    _class: JClass,
+    txt_path: JString,
+    output_dir: JString,
+    title: JString,
+    author: JString,
+    use_heuristic: jboolean,
+    custom_regex: JString,
+) -> jstring {
+    let txt_path: String = match env.get_string(&txt_path) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let output_dir: String = match env.get_string(&output_dir) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let get_opt_string = |env: &mut JNIEnv, js: &JString| -> Option<String> {
+        if js.is_null() {
+            return None;
+        }
+        match env.get_string(js) {
+            Ok(s) => {
+                let s: String = s.into();
+                if s.is_empty() { None } else { Some(s) }
+            }
+            Err(_) => None,
+        }
+    };
+
+    let title_opt = get_opt_string(&mut env, &title);
+    let author_opt = get_opt_string(&mut env, &author);
+    let regex_opt = get_opt_string(&mut env, &custom_regex);
+
+    let options = reader_core::txt::ConvertOptions {
+        title: title_opt,
+        author: author_opt,
+        custom_regex: regex_opt,
+        use_heuristic: use_heuristic != 0,
+        ..Default::default()
+    };
+
+    match reader_core::txt::convert_txt_to_epub(
+        std::path::Path::new(&txt_path),
+        std::path::Path::new(&output_dir),
+        &options,
+    ) {
+        Ok(result) => {
+            let json = serde_json::json!({
+                "epubPath": result.epub_path.to_string_lossy(),
+                "title": result.title,
+                "chapterCount": result.chapter_count,
+            });
+            jni_string_or_null!(env, json.to_string())
+        }
+        Err(e) => {
+            let json = serde_json::json!({ "error": e.to_string() });
+            jni_string_or_null!(env, json.to_string())
+        }
+    }
+}
+
+/// Search book content for a query string.
+/// Returns JSON array of search results.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_searchBook(
+    mut env: JNIEnv,
+    _class: JClass,
+    path: JString,
+    query: JString,
+) -> jstring {
+    let path: String = match env.get_string(&path) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let query: String = match env.get_string(&query) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let book = match get_book(&path) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let results = reader_core::search::search_book(&book, &query, false);
+    let json: Vec<_> = results
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "chapterIndex": r.chapter_index,
+                "chapterTitle": r.chapter_title,
+                "blockIndex": r.block_index,
+                "context": r.context,
+                "matchStart": r.match_start,
+                "matchLen": r.match_len,
+            })
+        })
+        .collect();
+
+    jni_string_or_null!(env, serde_json::to_string(&json).unwrap_or_default())
+}
+
+// ── Bookmark / Highlight / Note management ──
+
+/// Return full BookConfig JSON for a given book ID.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_getBookConfig(
+    mut env: JNIEnv,
+    _class: JClass,
+    data_dir: JString,
+    book_id: JString,
+) -> jstring {
+    let data_dir: String = match env.get_string(&data_dir) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let book_id: String = match env.get_string(&book_id) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let cfg = match Library::read_book_config(&data_dir, &book_id) {
+        Some(c) => c,
+        None => return std::ptr::null_mut(),
+    };
+    jni_string_or_null!(env, serde_json::to_string(&cfg).unwrap_or_default())
+}
+
+/// Toggle bookmark for a chapter: add if not present, remove if present.
+/// Returns "added" or "removed".
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_toggleBookmark(
+    mut env: JNIEnv,
+    _class: JClass,
+    data_dir: JString,
+    book_id: JString,
+    chapter: jni::sys::jint,
+) -> jstring {
+    let data_dir: String = match env.get_string(&data_dir) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let book_id: String = match env.get_string(&book_id) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let chapter = chapter as usize;
+
+    let mut cfg = match Library::read_book_config(&data_dir, &book_id) {
+        Some(c) => c,
+        None => return std::ptr::null_mut(),
+    };
+
+    let had = cfg.bookmarks.iter().any(|b| b.chapter == chapter);
+    if had {
+        cfg.bookmarks.retain(|b| b.chapter != chapter);
+    } else {
+        cfg.bookmarks.push(reader_core::library::Bookmark {
+            chapter,
+            block: 0,
+            created_at: reader_core::now_secs(),
+        });
+    }
+    cfg.save(&data_dir);
+
+    jni_string_or_null!(env, if had { "removed" } else { "added" })
+}
+
+/// Add a highlight and return its ID, or null on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_addHighlight(
+    mut env: JNIEnv,
+    _class: JClass,
+    data_dir: JString,
+    book_id: JString,
+    json_payload: JString,
+) -> jstring {
+    let data_dir: String = match env.get_string(&data_dir) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let book_id: String = match env.get_string(&book_id) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let payload: String = match env.get_string(&json_payload) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let mut cfg = match Library::read_book_config(&data_dir, &book_id) {
+        Some(c) => c,
+        None => return std::ptr::null_mut(),
+    };
+
+    #[derive(serde::Deserialize)]
+    struct HlInput {
+        chapter: usize,
+        start_block: usize,
+        start_offset: usize,
+        end_block: usize,
+        end_offset: usize,
+        color: String,
+    }
+
+    let input: HlInput = match serde_json::from_str(&payload) {
+        Ok(v) => v,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let color = match input.color.as_str() {
+        "Yellow" => reader_core::library::HighlightColor::Yellow,
+        "Green" => reader_core::library::HighlightColor::Green,
+        "Blue" => reader_core::library::HighlightColor::Blue,
+        "Pink" | "Purple" => reader_core::library::HighlightColor::Pink,
+        _ => reader_core::library::HighlightColor::Yellow,
+    };
+
+    let id = format!("{}-{}", reader_core::now_secs(), cfg.highlights.len());
+    cfg.highlights.push(reader_core::library::Highlight {
+        id: id.clone(),
+        chapter: input.chapter,
+        start_block: input.start_block,
+        start_offset: input.start_offset,
+        end_block: input.end_block,
+        end_offset: input.end_offset,
+        color,
+        created_at: reader_core::now_secs(),
+    });
+    cfg.save(&data_dir);
+
+    jni_string_or_null!(env, id)
+}
+
+/// Remove a highlight by ID.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_removeHighlight(
+    mut env: JNIEnv,
+    _class: JClass,
+    data_dir: JString,
+    book_id: JString,
+    highlight_id: JString,
+) {
+    let data_dir: String = match env.get_string(&data_dir) {
+        Ok(s) => s.into(),
+        Err(_) => return,
+    };
+    let book_id: String = match env.get_string(&book_id) {
+        Ok(s) => s.into(),
+        Err(_) => return,
+    };
+    let hl_id: String = match env.get_string(&highlight_id) {
+        Ok(s) => s.into(),
+        Err(_) => return,
+    };
+
+    let mut cfg = match Library::read_book_config(&data_dir, &book_id) {
+        Some(c) => c,
+        None => return,
+    };
+    cfg.highlights.retain(|h| h.id != hl_id);
+    // Also remove notes attached to this highlight
+    cfg.notes.retain(|n| n.highlight_id != hl_id);
+    cfg.save(&data_dir);
+}
+
+/// Save or update a note for a highlight.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_saveNote(
+    mut env: JNIEnv,
+    _class: JClass,
+    data_dir: JString,
+    book_id: JString,
+    highlight_id: JString,
+    content: JString,
+) {
+    let data_dir: String = match env.get_string(&data_dir) {
+        Ok(s) => s.into(),
+        Err(_) => return,
+    };
+    let book_id: String = match env.get_string(&book_id) {
+        Ok(s) => s.into(),
+        Err(_) => return,
+    };
+    let hl_id: String = match env.get_string(&highlight_id) {
+        Ok(s) => s.into(),
+        Err(_) => return,
+    };
+    let content: String = match env.get_string(&content) {
+        Ok(s) => s.into(),
+        Err(_) => return,
+    };
+
+    let mut cfg = match Library::read_book_config(&data_dir, &book_id) {
+        Some(c) => c,
+        None => return,
+    };
+
+    let now = reader_core::now_secs();
+    if let Some(note) = cfg.notes.iter_mut().find(|n| n.highlight_id == hl_id) {
+        note.content = content;
+        note.updated_at = now;
+    } else {
+        cfg.notes.push(reader_core::library::Note {
+            highlight_id: hl_id,
+            content,
+            created_at: now,
+            updated_at: now,
+        });
+    }
+    cfg.save(&data_dir);
+}
+
+// ── CSC Contribution ──
+
+/// Get the count of resolved (accepted/rejected) corrections for the current book.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_getCscCorrectionCount(
+    mut env: JNIEnv,
+    _class: JClass,
+    data_dir: JString,
+    book_id: JString,
+) -> jni::sys::jint {
+    let data_dir: String = match env.get_string(&data_dir) {
+        Ok(s) => s.into(),
+        Err(_) => return 0,
+    };
+    let book_id: String = match env.get_string(&book_id) {
+        Ok(s) => s.into(),
+        Err(_) => return 0,
+    };
+
+    let cfg = match Library::read_book_config(&data_dir, &book_id) {
+        Some(c) => c,
+        None => return 0,
+    };
+
+    cfg.corrections
+        .iter()
+        .filter(|r| r.status == "accepted" || r.status == "rejected")
+        .count() as jni::sys::jint
+}
+
+/// Collect CSC training samples from corrections and return JSONL string.
+/// Returns null if no accepted corrections or book not found.
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_collectCscSamples(
+    mut env: JNIEnv,
+    _class: JClass,
+    data_dir: JString,
+    book_path: JString,
+    book_id: JString,
+) -> jstring {
+    use reader_core::epub::ContentBlock;
+
+    let data_dir: String = match env.get_string(&data_dir) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let book_path: String = match env.get_string(&book_path) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let book_id: String = match env.get_string(&book_id) {
+        Ok(s) => s.into(),
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    let cfg = match Library::read_book_config(&data_dir, &book_id) {
+        Some(c) => c,
+        None => return std::ptr::null_mut(),
+    };
+
+    let accepted: Vec<_> = cfg.corrections.iter().filter(|r| r.status == "accepted").collect();
+    if accepted.is_empty() {
+        return std::ptr::null_mut();
+    }
+
+    let book = match get_book(&book_path) {
+        Ok(b) => b,
+        Err(_) => return std::ptr::null_mut(),
+    };
+
+    const CONTEXT_RADIUS: usize = 10;
+    const MAX_LINE_LEN: usize = 50;
+
+    #[derive(serde::Serialize)]
+    struct CscSample {
+        input: String,
+        output: String,
+    }
+
+    let mut lines = String::new();
+    for rec in &accepted {
+        let chapter = match book.chapters.get(rec.chapter) {
+            Some(ch) => ch,
+            None => continue,
+        };
+        let block = match chapter.blocks.get(rec.block_idx) {
+            Some(b) => b,
+            None => continue,
+        };
+        let block_text: String = match block {
+            ContentBlock::Paragraph { spans } => spans.iter().map(|s| s.text.as_str()).collect(),
+            ContentBlock::Heading { spans, .. } => spans.iter().map(|s| s.text.as_str()).collect(),
+            _ => continue,
+        };
+        let chars: Vec<char> = block_text.chars().collect();
+        if rec.char_offset >= chars.len() {
+            continue;
+        }
+        let start = rec.char_offset.saturating_sub(CONTEXT_RADIUS);
+        let end = (rec.char_offset + 1 + CONTEXT_RADIUS).min(chars.len());
+        let context_chars = &chars[start..end];
+        let mut output_chars: Vec<char> = context_chars.to_vec();
+        let local_offset = rec.char_offset - start;
+        let mut input_chars = output_chars.clone();
+        if let Some(orig_ch) = rec.original.chars().next() {
+            input_chars[local_offset] = orig_ch;
+        }
+        if let Some(corr_ch) = rec.corrected.chars().next() {
+            output_chars[local_offset] = corr_ch;
+        }
+        let input: String = input_chars.iter().collect();
+        let output: String = output_chars.iter().collect();
+        if input.len() == output.len() && input != output && input.chars().count() <= MAX_LINE_LEN {
+            if let Ok(line) = serde_json::to_string(&CscSample { input, output }) {
+                lines.push_str(&line);
+                lines.push('\n');
+            }
+        }
+    }
+
+    if lines.is_empty() {
+        return std::ptr::null_mut();
+    }
+
+    jni_string_or_null!(env, lines)
+}

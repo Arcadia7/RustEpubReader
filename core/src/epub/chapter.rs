@@ -9,11 +9,33 @@ pub enum InlineStyle {
     BoldItalic,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
+pub enum CorrectionStatus {
+    #[default]
+    Pending,
+    Accepted,
+    Rejected,
+    Ignored,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CorrectionInfo {
+    pub original: String,
+    pub corrected: String,
+    pub confidence: f32,
+    /// Character offset within the block text (concatenated spans).
+    #[serde(default)]
+    pub char_offset: usize,
+    pub status: CorrectionStatus,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TextSpan {
     pub text: String,
     pub style: InlineStyle,
     pub link_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub correction: Option<CorrectionInfo>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

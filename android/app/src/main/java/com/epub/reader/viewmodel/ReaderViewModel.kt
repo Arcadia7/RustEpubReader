@@ -33,11 +33,15 @@ import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
 import android.util.Base64
 
+data class TxtChapterPreview(val title: String, val lineStart: Int, val charCount: Int)
+
 class ReaderViewModel(application: Application) : AndroidViewModel(application) {
 
     private val context get() = getApplication<Application>()
     private val library = Library(context)
     private var currentBookUri: String? = null
+    val currentBookId: String?
+        get() = currentBookUri?.let { uri -> library.books.firstOrNull { it.uri == uri }?.id }
     private val prefs by lazy {
         context.getSharedPreferences("reader_settings", Context.MODE_PRIVATE)
     }
@@ -111,6 +115,63 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
     var showUpdateDialog by mutableStateOf(false)
         private set
 
+    // ---- TXT 导入状态 ----
+    var showTxtImport by mutableStateOf(false)
+        private set
+    var txtImportPath by mutableStateOf<String?>(null)
+        private set
+
+    // ---- 搜索状态 ----
+    var showSearch by mutableStateOf(false)
+    var searchQuery by mutableStateOf("")
+    var searchResults by mutableStateOf<List<SearchResult>>(emptyList())
+        private set
+    var txtImportTitle by mutableStateOf("")
+    var txtImportAuthor by mutableStateOf("")
+    var txtImportRegex by mutableStateOf("")
+    var txtImportHeuristic by mutableStateOf(false)
+    var txtImportPreviews by mutableStateOf<List<TxtChapterPreview>>(emptyList())
+        private set
+    var txtImportConverting by mutableStateOf(false)
+        private set
+    var txtImportError by mutableStateOf<String?>(null)
+        private set
+
+    // ---- 书签 / 高亮 / 标注状态 ----
+    var isChapterBookmarked by mutableStateOf(false)
+        private set
+    var bookConfig by mutableStateOf<FullBookConfig?>(null)
+        private set
+    var showAnnotationsPanel by mutableStateOf(false)
+
+    // ---- CSC 贡献状态 ----
+    var showContributeDialog by mutableStateOf(false)
+    var contributeStatus by mutableStateOf("")
+        private set
+    var contributeInProgress by mutableStateOf(false)
+        private set
+    var contributePrUrl by mutableStateOf<String?>(null)
+        private set
+    var contributeSamples by mutableStateOf("")
+        private set
+    var contributeSampleCount by mutableStateOf(0)
+        private set
+    // GitHub OAuth
+    var githubToken by mutableStateOf<String?>(null)
+        private set
+    var githubUsername by mutableStateOf<String?>(null)
+        private set
+    var githubDeviceCode by mutableStateOf<String?>(null)
+        private set
+    var githubUserCode by mutableStateOf<String?>(null)
+        private set
+    var githubVerificationUri by mutableStateOf<String?>(null)
+        private set
+    var githubAuthPolling by mutableStateOf(false)
+        private set
+    private var contributePrompted = false
+    private var contributeDismissed = false
+
     @Volatile
     private var autoSyncInProgress: Boolean = false
     private val autoSyncLastAttemptAt = ConcurrentHashMap<String, Long>()
@@ -181,6 +242,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         const val LAST_BOOK_URI = "last_book_uri"
         const val LAST_BOOK_CHAPTER = "last_book_chapter"
         const val AUTO_START_SHARING = "auto_start_sharing"
+        const val GITHUB_TOKEN = "github_token"
+        const val GITHUB_USERNAME = "github_username"
     }
 
     private fun loadSettings() {
@@ -201,6 +264,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         readerLanguage = prefs.getString(PrefKeys.LANGUAGE, "auto") ?: "auto"
         I18n.setLanguage(readerLanguage)
         autoStartSharing = prefs.getBoolean(PrefKeys.AUTO_START_SHARING, false)
+        githubToken = prefs.getString(PrefKeys.GITHUB_TOKEN, null)
+        githubUsername = prefs.getString(PrefKeys.GITHUB_USERNAME, null)
     }
 
     private fun persistSettings() {
@@ -368,20 +433,50 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             isLoading = true
             errorMessage = null
             var tempFile: File? = null
+            val isTxt = isTxtUri(uri)
             try {
                 tempFile = withContext(Dispatchers.IO) {
-                    copyUriToTempFile(uri)
+                    copyUriToTempFile(uri, if (isTxt) "txt" else "epub")
                 }
-                parseAndOpen(tempFile ?: throw Exception(I18n.t("error.temp_file_failed")))
+                val file = tempFile ?: throw Exception(I18n.t("error.temp_file_failed"))
+                if (isTxt) {
+                    // TXT: 打开导入对话框（临时文件保留给对话框使用）
+                    openTxtImportDialog(file.absolutePath)
+                } else {
+                    parseAndOpen(file)
+                }
             } catch (e: Exception) {
-                errorMessage = "��ʧ��: ${e.message}"
+                errorMessage = "打开失败: ${e.message}"
             } finally {
-                tempFile?.let { file ->
-                    if (file.exists() && file.parentFile?.name == "imports") {
-                        runCatching { file.delete() }
+                if (!isTxt) {
+                    tempFile?.let { file ->
+                        if (file.exists() && file.parentFile?.name == "imports") {
+                            runCatching { file.delete() }
+                        }
                     }
                 }
                 isLoading = false
+            }
+        }
+    }
+
+    fun performSearch(query: String) {
+        if (query.isBlank()) {
+            searchResults = emptyList()
+            return
+        }
+        val path = currentBookUri ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val json = RustBridge.searchBook(path, query)
+            val results = if (json != null) {
+                try {
+                    jsonParser.decodeFromString<List<SearchResult>>(json)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+            } else emptyList()
+            withContext(Dispatchers.Main) {
+                searchResults = results
             }
         }
     }
@@ -512,16 +607,24 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             .apply()
 
         loadLibrary()
+        loadBookConfig()
     }
 
-    private suspend fun copyUriToTempFile(uri: Uri): File = withContext(Dispatchers.IO) {
+    private fun isTxtUri(uri: Uri): Boolean {
+        val mime = context.contentResolver.getType(uri)
+        if (mime == "text/plain") return true
+        val path = uri.path ?: uri.lastPathSegment ?: ""
+        return path.endsWith(".txt", ignoreCase = true)
+    }
+
+    private suspend fun copyUriToTempFile(uri: Uri, ext: String = "epub"): File = withContext(Dispatchers.IO) {
         val importDir = File(context.cacheDir, "imports").also { it.mkdirs() }
-        val dest = File(importDir, "import_${System.currentTimeMillis()}.epub")
+        val dest = File(importDir, "import_${System.currentTimeMillis()}.$ext")
         context.contentResolver.openInputStream(uri)?.use { input ->
             FileOutputStream(dest).use { output ->
                 input.copyTo(output)
             }
-        } ?: throw Exception("�޷���ȡ�ļ�")
+        } ?: throw Exception("无法读取文件")
         dest
     }
 
@@ -534,6 +637,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
         currentChapter = target
         currentPage = 0
         saveProgress()
+        updateBookmarkState()
+        checkContributionPrompt()
     }
 
     fun goBackChapter() {
@@ -552,6 +657,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             currentChapter++
             currentPage = 0
             saveProgress()
+            updateBookmarkState()
+            checkContributionPrompt()
         }
     }
 
@@ -560,6 +667,8 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
             currentChapter--
             currentPage = 0
             saveProgress()
+            updateBookmarkState()
+            checkContributionPrompt()
         }
     }
 
@@ -926,6 +1035,303 @@ class ReaderViewModel(application: Application) : AndroidViewModel(application) 
                 tryAutoSyncWithPairedPeer(peers)
             } catch (_: Exception) { }
         }
+    }
+
+    // ── TXT 导入 ──
+
+    fun openTxtImportDialog(path: String) {
+        txtImportPath = path
+        txtImportTitle = File(path).nameWithoutExtension
+        txtImportAuthor = ""
+        txtImportRegex = ""
+        txtImportHeuristic = false
+        txtImportError = null
+        txtImportConverting = false
+        showTxtImport = true
+        refreshTxtPreviews()
+    }
+
+    fun refreshTxtPreviews() {
+        val path = txtImportPath ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val json = RustBridge.previewTxtChapters(
+                path,
+                txtImportHeuristic,
+                txtImportRegex.ifEmpty { null }
+            ) ?: "[]"
+            val arr = org.json.JSONArray(json)
+            val list = (0 until arr.length()).map { i ->
+                val obj = arr.getJSONObject(i)
+                TxtChapterPreview(
+                    title = obj.getString("title"),
+                    lineStart = obj.getInt("lineStart"),
+                    charCount = obj.getInt("charCount")
+                )
+            }
+            withContext(Dispatchers.Main) {
+                txtImportPreviews = list
+            }
+        }
+    }
+
+    fun convertTxtToEpub() {
+        val path = txtImportPath ?: return
+        txtImportConverting = true
+        txtImportError = null
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = RustBridge.convertTxtToEpub(
+                path,
+                booksDir,
+                txtImportTitle.ifEmpty { null },
+                txtImportAuthor.ifEmpty { null },
+                txtImportHeuristic,
+                txtImportRegex.ifEmpty { null }
+            )
+            withContext(Dispatchers.Main) {
+                txtImportConverting = false
+                if (result == null) {
+                    txtImportError = "转换失败"
+                    return@withContext
+                }
+                try {
+                    val obj = org.json.JSONObject(result)
+                    if (obj.has("error")) {
+                        txtImportError = obj.getString("error")
+                    } else {
+                        val epubPath = obj.getString("epubPath")
+                        showTxtImport = false
+                        txtImportPath = null
+                        openFromPath(epubPath, 0)
+                    }
+                } catch (e: Exception) {
+                    txtImportError = e.message
+                }
+            }
+        }
+    }
+
+    fun dismissTxtImport() {
+        showTxtImport = false
+        // 清理临时 TXT 文件
+        txtImportPath?.let { path ->
+            val file = File(path)
+            if (file.exists() && file.parentFile?.name == "imports") {
+                runCatching { file.delete() }
+            }
+        }
+        txtImportPath = null
+    }
+
+    // ── CSC Contribution ──
+
+    /** Check if user should be prompted to contribute correction data. */
+    fun checkContributionPrompt() {
+        if (contributePrompted || contributeDismissed) return
+        val uri = currentBookUri ?: return
+        val bookId = library.books.firstOrNull { it.uri == uri }?.id ?: return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val count = RustBridge.getCscCorrectionCount(dataDir, bookId)
+            if (count >= 10) {
+                withContext(Dispatchers.Main) {
+                    contributePrompted = true
+                    showContributeDialog = true
+                }
+            }
+        }
+    }
+
+    /** Collect samples and prepare for contribution dialog. */
+    fun prepareContribution() {
+        val uri = currentBookUri ?: return
+        val bookId = library.books.firstOrNull { it.uri == uri }?.id ?: return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val jsonl = RustBridge.collectCscSamples(dataDir, uri, bookId)
+            withContext(Dispatchers.Main) {
+                if (jsonl.isNullOrBlank()) {
+                    contributeSamples = ""
+                    contributeSampleCount = 0
+                } else {
+                    contributeSamples = jsonl
+                    contributeSampleCount = jsonl.lines().count { it.isNotBlank() }
+                }
+            }
+        }
+    }
+
+    /** Start GitHub Device Flow OAuth. */
+    fun startGitHubLogin() {
+        viewModelScope.launch {
+            val result = com.zhongbai233.epub.reader.util.GitHubContributor.requestDeviceCode()
+            result.onSuccess { dc ->
+                githubDeviceCode = dc.deviceCode
+                githubUserCode = dc.userCode
+                githubVerificationUri = dc.verificationUri
+                githubAuthPolling = true
+
+                // Start polling for token in background
+                viewModelScope.launch {
+                    val authResult = com.zhongbai233.epub.reader.util.GitHubContributor.pollForToken(dc)
+                    githubAuthPolling = false
+                    when (authResult) {
+                        is com.zhongbai233.epub.reader.util.GitHubContributor.AuthResult.Success -> {
+                            githubToken = authResult.token
+                            githubUsername = authResult.username
+                            githubUserCode = null
+                            githubVerificationUri = null
+                            prefs.edit()
+                                .putString(PrefKeys.GITHUB_TOKEN, authResult.token)
+                                .putString(PrefKeys.GITHUB_USERNAME, authResult.username)
+                                .apply()
+                        }
+                        is com.zhongbai233.epub.reader.util.GitHubContributor.AuthResult.Error -> {
+                            contributeStatus = authResult.message
+                        }
+                    }
+                }
+            }.onFailure {
+                contributeStatus = it.message ?: "Failed to start login"
+            }
+        }
+    }
+
+    /** Submit collected samples to GitHub. */
+    fun submitContribution() {
+        val token = githubToken ?: return
+        val username = githubUsername ?: return
+        val jsonl = contributeSamples
+        if (jsonl.isBlank()) return
+
+        contributeInProgress = true
+        contributeStatus = ""
+        contributePrUrl = null
+
+        viewModelScope.launch {
+            val result = com.zhongbai233.epub.reader.util.GitHubContributor.submitContribution(token, username, jsonl)
+            contributeInProgress = false
+            when (result) {
+                is com.zhongbai233.epub.reader.util.GitHubContributor.ContributeResult.Success -> {
+                    contributePrUrl = result.prUrl
+                    contributeStatus = ""
+                }
+                is com.zhongbai233.epub.reader.util.GitHubContributor.ContributeResult.Error -> {
+                    contributeStatus = result.message
+                }
+            }
+        }
+    }
+
+    /** Dismiss the contribute dialog (don't ask again this session). */
+    fun dismissContributeDialog() {
+        showContributeDialog = false
+        contributeDismissed = true
+        contributeStatus = ""
+        contributePrUrl = null
+    }
+
+    // ---- 书签 / 高亮 / 标注 ----
+
+    fun loadBookConfig() {
+        val bookId = currentBookId ?: return
+        val dataDir = getApplication<Application>().filesDir.absolutePath
+        viewModelScope.launch(Dispatchers.IO) {
+            val json = RustBridge.getBookConfig(dataDir, bookId)
+            if (json != null) {
+                try {
+                    val cfg = jsonParser.decodeFromString<FullBookConfig>(json)
+                    withContext(Dispatchers.Main) {
+                        bookConfig = cfg
+                        updateBookmarkState()
+                    }
+                } catch (_: Exception) { }
+            }
+        }
+    }
+
+    private fun updateBookmarkState() {
+        val ch = currentChapter
+        isChapterBookmarked = bookConfig?.bookmarks?.any { it.chapter == ch } ?: false
+    }
+
+    fun toggleBookmark(): Boolean {
+        val bookId = currentBookId ?: return false
+        val dataDir = getApplication<Application>().filesDir.absolutePath
+        val chapter = currentChapter
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = RustBridge.toggleBookmark(dataDir, bookId, chapter)
+            // reload config
+            val json = RustBridge.getBookConfig(dataDir, bookId)
+            if (json != null) {
+                try {
+                    val cfg = jsonParser.decodeFromString<FullBookConfig>(json)
+                    withContext(Dispatchers.Main) {
+                        bookConfig = cfg
+                        updateBookmarkState()
+                    }
+                } catch (_: Exception) { }
+            }
+        }
+        // return the toggled state optimistically
+        val was = isChapterBookmarked
+        isChapterBookmarked = !was
+        return !was
+    }
+
+    fun removeBookmarkForChapter(chapter: Int) {
+        val bookId = currentBookId ?: return
+        val dataDir = getApplication<Application>().filesDir.absolutePath
+        viewModelScope.launch(Dispatchers.IO) {
+            // toggleBookmark will remove if present
+            RustBridge.toggleBookmark(dataDir, bookId, chapter)
+            reloadBookConfig(dataDir, bookId)
+        }
+    }
+
+    fun addHighlight(
+        chapter: Int,
+        startBlock: Int,
+        startOffset: Int,
+        endBlock: Int,
+        endOffset: Int,
+        color: String = "Yellow"
+    ) {
+        val bookId = currentBookId ?: return
+        val dataDir = getApplication<Application>().filesDir.absolutePath
+        val payload = """{"chapter":$chapter,"start_block":$startBlock,"start_offset":$startOffset,"end_block":$endBlock,"end_offset":$endOffset,"color":"$color"}"""
+        viewModelScope.launch(Dispatchers.IO) {
+            RustBridge.addHighlight(dataDir, bookId, payload)
+            reloadBookConfig(dataDir, bookId)
+        }
+    }
+
+    fun removeHighlight(highlightId: String) {
+        val bookId = currentBookId ?: return
+        val dataDir = getApplication<Application>().filesDir.absolutePath
+        viewModelScope.launch(Dispatchers.IO) {
+            RustBridge.removeHighlight(dataDir, bookId, highlightId)
+            reloadBookConfig(dataDir, bookId)
+        }
+    }
+
+    fun saveNote(highlightId: String, content: String) {
+        val bookId = currentBookId ?: return
+        val dataDir = getApplication<Application>().filesDir.absolutePath
+        viewModelScope.launch(Dispatchers.IO) {
+            RustBridge.saveNote(dataDir, bookId, highlightId, content)
+            reloadBookConfig(dataDir, bookId)
+        }
+    }
+
+    private suspend fun reloadBookConfig(dataDir: String, bookId: String) {
+        val json = RustBridge.getBookConfig(dataDir, bookId) ?: return
+        try {
+            val cfg = jsonParser.decodeFromString<FullBookConfig>(json)
+            withContext(Dispatchers.Main) {
+                bookConfig = cfg
+                updateBookmarkState()
+            }
+        } catch (_: Exception) { }
     }
 
     override fun onCleared() {

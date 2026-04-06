@@ -7,6 +7,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -147,7 +150,15 @@ fun ReaderScreen(
     onUpdateLanguage: (String) -> Unit,
     onOpenBackgroundPicker: () -> Unit,
     onClearBackgroundImage: () -> Unit,
-    onToggleToc: () -> Unit
+    onToggleToc: () -> Unit,
+    onToggleSearch: () -> Unit,
+    isChapterBookmarked: Boolean = false,
+    onToggleBookmark: () -> Unit = {},
+    onShowAnnotations: () -> Unit = {},
+    highlights: List<HighlightDto> = emptyList(),
+    notes: List<NoteDto> = emptyList(),
+    onAddHighlight: (Int, Int, Int, Int, Int, String) -> Unit = { _, _, _, _, _, _ -> },
+    onSaveNote: (String, String) -> Unit = { _, _ -> }
 ) {
     val chapter = book.chapters.getOrNull(currentChapter)
     val uriHandler = LocalUriHandler.current
@@ -287,6 +298,19 @@ fun ReaderScreen(
             )
         }
 
+        // 书签下拉指示器状态
+        var bookmarkPullOffset by remember { mutableFloatStateOf(0f) }
+        val bookmarkThreshold = with(LocalDensity.current) { 100.dp.toPx() }
+        var bookmarkSnackText by remember { mutableStateOf<String?>(null) }
+
+        // Snackbar 显示
+        LaunchedEffect(bookmarkSnackText) {
+            if (bookmarkSnackText != null) {
+                delay(1200)
+                bookmarkSnackText = null
+            }
+        }
+
         // 内容层 — 全屏
         if (chapter == null) {
             Box(
@@ -296,7 +320,7 @@ fun ReaderScreen(
                 Text(I18n.t("reader.no_content"), color = textColor)
             }
         } else if (scrollMode) {
-            // 滚动模式: 点击任意处切换控制栏
+            // 滚动模式: 点击任意处切换控制栏 + 下拉书签
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -315,8 +339,37 @@ fun ReaderScreen(
                     linkColor = linkColor,
                     bgColor = bgColor,
                     fontFamily = fontFamily,
-                    onLinkClick = onLinkClick
+                    onLinkClick = onLinkClick,
+                    onOverscrollDown = {
+                        onToggleBookmark()
+                        bookmarkSnackText = if (!isChapterBookmarked) I18n.t("annotations.bookmark_added")
+                        else I18n.t("annotations.bookmark_removed")
+                    }
                 )
+
+                // 书签下拉指示文字
+                AnimatedVisibility(
+                    visible = bookmarkSnackText != null,
+                    enter = fadeIn() + slideInVertically { -it },
+                    exit = fadeOut() + slideOutVertically { -it },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 80.dp)
+                        .zIndex(10f)
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.inverseSurface,
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        Text(
+                            bookmarkSnackText ?: "",
+                            color = MaterialTheme.colorScheme.inverseOnSurface,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            fontSize = 14.sp
+                        )
+                    }
+                }
             }
         } else {
             // 翻页模式: 左右点击翻页, 中间点击切换控制栏
@@ -366,6 +419,7 @@ fun ReaderScreen(
                 totalChapters = book.chapters.size,
                 isDarkMode = isDarkMode,
                 previousChapter = previousChapter,
+                isBookmarked = isChapterBookmarked,
                 onNavigateBack = onNavigateBack,
                 onGoBackChapter = onGoBackChapter,
                 onToggleToc = onToggleToc,
@@ -373,6 +427,9 @@ fun ReaderScreen(
                     showControls = true
                     showSettingsSheet = true
                 },
+                onToggleSearch = onToggleSearch,
+                onToggleBookmark = onToggleBookmark,
+                onShowAnnotations = onShowAnnotations,
                 onPrevChapter = {
                     if (currentChapter > 0) {
                         startAtLastPageRef[0] = true
@@ -436,6 +493,80 @@ fun ReaderScreen(
     }
 }
 
+// ─── 搜索对话框 ───
+
+@Composable
+fun SearchDialog(
+    visible: Boolean,
+    query: String,
+    results: List<com.zhongbai233.epub.reader.model.SearchResult>,
+    onQueryChange: (String) -> Unit,
+    onSearch: (String) -> Unit,
+    onResultClick: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (!visible) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(I18n.t("search.title")) },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    label = { Text(I18n.t("search.placeholder")) },
+                    singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = { onSearch(query) }) {
+                            Icon(Icons.Default.Search, contentDescription = null)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                if (results.isEmpty() && query.isNotBlank()) {
+                    Text(
+                        I18n.t("search.no_results"),
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                LazyColumn(modifier = Modifier.heightIn(max = 350.dp)) {
+                    items(results.size) { idx ->
+                        val r = results[idx]
+                        Surface(
+                            onClick = { onResultClick(r.chapterIndex) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                                Text(
+                                    r.chapterTitle,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    r.context,
+                                    fontSize = 12.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(I18n.t("dialog.close"))
+            }
+        }
+    )
+}
+
 // ─── 滚动模式 ───
 
 @Composable
@@ -446,7 +577,8 @@ private fun ScrollModeContent(
     linkColor: Color,
     bgColor: Color,
     fontFamily: FontFamily,
-    onLinkClick: (String) -> Unit
+    onLinkClick: (String) -> Unit,
+    onOverscrollDown: () -> Unit = {}
 ) {
     val listState = rememberLazyListState()
     val showChapterTitle = remember(chapter) { shouldRenderChapterTitle(chapter) }
@@ -458,11 +590,57 @@ private fun ScrollModeContent(
     val scrollContentWidthPx = with(scrollDensity) { (configuration.screenWidthDp.dp - hPaddingDp * 2f).toPx() }
     val scrollSpToPx = scrollDensity.fontScale * scrollDensity.density
 
+    // 下拉书签手势: 在列表顶部时检测下拉
+    var pullTotal by remember { mutableFloatStateOf(0f) }
+    var pullTriggered by remember { mutableStateOf(false) }
+    val pullThreshold = with(scrollDensity) { 120.dp.toPx() }
+
+    val nestedScrollConnection = remember {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(
+                available: Offset,
+                source: androidx.compose.ui.input.nestedscroll.NestedScrollSource
+            ): Offset {
+                // 向上滚回时重置
+                if (available.y < 0 && pullTotal > 0) {
+                    pullTotal = (pullTotal + available.y).coerceAtLeast(0f)
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: androidx.compose.ui.input.nestedscroll.NestedScrollSource
+            ): Offset {
+                if (available.y > 0 && !pullTriggered) {
+                    pullTotal += available.y
+                    if (pullTotal > pullThreshold) {
+                        pullTriggered = true
+                        onOverscrollDown()
+                    }
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPostFling(
+                consumed: androidx.compose.ui.unit.Velocity,
+                available: androidx.compose.ui.unit.Velocity
+            ): androidx.compose.ui.unit.Velocity {
+                pullTotal = 0f
+                pullTriggered = false
+                return super.onPostFling(consumed, available)
+            }
+        }
+    }
+
     LazyColumn(
         state = listState,
         modifier = Modifier
             .fillMaxSize()
-            .background(bgColor),
+            .background(bgColor)
+            .nestedScroll(nestedScrollConnection),
         contentPadding = PaddingValues(start = hPaddingDp, end = hPaddingDp, top = topPaddingDp, bottom = bottomPaddingDp)
     ) {
         if (showChapterTitle) {
@@ -1262,11 +1440,13 @@ fun ContentBlockView(
                 )
             )
 
-            Text(
-                text = annotated,
-                style = headingStyle,
-                modifier = Modifier.padding(top = (fontSize * 1.2f).dp, bottom = (fontSize * 1.8f).dp)
-            )
+            SelectionContainer {
+                Text(
+                    text = annotated,
+                    style = headingStyle,
+                    modifier = Modifier.padding(top = (fontSize * 1.2f).dp, bottom = (fontSize * 1.8f).dp)
+                )
+            }
         }
 
         is ContentBlock.Paragraph -> {
@@ -1290,11 +1470,13 @@ fun ContentBlockView(
                 )
             )
             
-            Text(
-                text = annotated,
-                modifier = Modifier.padding(vertical = (fontSize * 0.5f).dp),
-                style = baseStyle
-            )
+            SelectionContainer {
+                Text(
+                    text = annotated,
+                    modifier = Modifier.padding(vertical = (fontSize * 0.5f).dp),
+                    style = baseStyle
+                )
+            }
         }
 
         is ContentBlock.Image -> {
@@ -1891,10 +2073,14 @@ private fun ReaderTopBar(
     totalChapters: Int,
     isDarkMode: Boolean,
     previousChapter: Int?,
+    isBookmarked: Boolean = false,
     onNavigateBack: () -> Unit,
     onGoBackChapter: () -> Unit,
     onToggleToc: () -> Unit,
     onOpenSettings: () -> Unit,
+    onToggleSearch: () -> Unit,
+    onToggleBookmark: () -> Unit = {},
+    onShowAnnotations: () -> Unit = {},
     onPrevChapter: () -> Unit,
     onNextChapter: () -> Unit
 ) {
@@ -1932,6 +2118,19 @@ private fun ReaderTopBar(
             }
             IconButton(onClick = onToggleToc) {
                 Icon(Icons.AutoMirrored.Filled.MenuBook, I18n.t("nav.toc"))
+            }
+            IconButton(onClick = onToggleSearch) {
+                Icon(Icons.Default.Search, I18n.t("search.title"))
+            }
+            IconButton(onClick = onToggleBookmark) {
+                Icon(
+                    if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                    contentDescription = I18n.t("annotations.add_bookmark"),
+                    tint = if (isBookmarked) Color(0xFFFF9800) else LocalContentColor.current
+                )
+            }
+            IconButton(onClick = onShowAnnotations) {
+                Icon(Icons.Default.EditNote, I18n.t("annotations.title"))
             }
             IconButton(onClick = onOpenSettings) {
                 Icon(Icons.Default.Settings, I18n.t("nav.reading_settings"))
