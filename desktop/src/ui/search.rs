@@ -32,21 +32,18 @@ impl ReaderApp {
 
                 if run_search && !self.search_query.is_empty() {
                     if let Some(book) = &self.book {
-                        self.search_results = reader_core::search::search_book(
-                            book,
-                            &self.search_query,
-                            false,
-                        );
+                        self.search_results =
+                            reader_core::search::search_book(book, &self.search_query, false);
                         self.search_selected = None;
                     }
                 }
 
                 ui.add_space(6.0);
                 if !self.search_results.is_empty() {
-                    ui.label(
-                        self.i18n
-                            .tf1("search.results_count", &self.search_results.len().to_string()),
-                    );
+                    ui.label(self.i18n.tf1(
+                        "search.results_count",
+                        &self.search_results.len().to_string(),
+                    ));
                     ui.add_space(4.0);
 
                     egui::ScrollArea::vertical()
@@ -57,10 +54,7 @@ impl ReaderApp {
                                 let selected = self.search_selected == Some(idx);
                                 let resp = ui.selectable_label(
                                     selected,
-                                    format!(
-                                        "[{}] {}",
-                                        result.chapter_title, result.context
-                                    ),
+                                    format!("[{}] {}", result.chapter_title, result.context),
                                 );
                                 if resp.clicked() {
                                     self.search_selected = Some(idx);

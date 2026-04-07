@@ -61,17 +61,13 @@ fn re_arabic_numeral_chapter() -> &'static Regex {
 /// 高优先级：英文 Chapter/CHAPTER
 fn re_english_chapter() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| {
-        Regex::new(r"(?im)^[\s]*(?:chapter|part|book|volume)\s+\d+").unwrap()
-    })
+    R.get_or_init(|| Regex::new(r"(?im)^[\s]*(?:chapter|part|book|volume)\s+\d+").unwrap())
 }
 
 /// 高优先级：卷X
 fn re_volume_prefix() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| {
-        Regex::new(r"(?m)^[\s　]*卷[零〇一二三四五六七八九十百千万\d]+").unwrap()
-    })
+    R.get_or_init(|| Regex::new(r"(?m)^[\s　]*卷[零〇一二三四五六七八九十百千万\d]+").unwrap())
 }
 
 /// 高优先级：带括号的卷名 【第X卷...】
@@ -327,10 +323,7 @@ fn merge_short_chapters(chapters: &mut Vec<RawChapter>, min_chars: usize) {
             let merged_content = {
                 let prev = &chapters[i - 1];
                 let curr = &chapters[i];
-                format!(
-                    "{}\n\n{}\n{}",
-                    prev.content, curr.title, curr.content
-                )
+                format!("{}\n\n{}\n{}", prev.content, curr.title, curr.content)
             };
             chapters[i - 1].content = merged_content;
             chapters.remove(i);
@@ -463,8 +456,11 @@ fn heuristic_detect(lines: &[&str]) -> Vec<(usize, String)> {
     // 间距规律性（标准差/均值 ≤ 0.5）
     let mean = spacings.iter().sum::<usize>() as f64 / spacings.len() as f64;
     if mean > 0.0 {
-        let variance =
-            spacings.iter().map(|&s| (s as f64 - mean).powi(2)).sum::<f64>() / spacings.len() as f64;
+        let variance = spacings
+            .iter()
+            .map(|&s| (s as f64 - mean).powi(2))
+            .sum::<f64>()
+            / spacings.len() as f64;
         let std_dev = variance.sqrt();
         if std_dev / mean > 0.5 {
             return Vec::new();
@@ -489,7 +485,10 @@ fn heuristic_detect(lines: &[&str]) -> Vec<(usize, String)> {
                 return false;
             }
             let end_puncts = ['。', '！', '？', '；', '…', '」', '』', '"'];
-            prev_line.chars().last().is_some_and(|c| end_puncts.contains(&c))
+            prev_line
+                .chars()
+                .last()
+                .is_some_and(|c| end_puncts.contains(&c))
         });
 
         has_following_paragraph && has_preceding_end

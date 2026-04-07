@@ -29,11 +29,7 @@ p.no-indent { text-indent: 0; }
 ";
 
 /// 从章节列表生成 EPUB 文件。
-pub fn build_epub(
-    chapters: &[RawChapter],
-    meta: &TxtMeta,
-    output: &Path,
-) -> Result<(), TxtError> {
+pub fn build_epub(chapters: &[RawChapter], meta: &TxtMeta, output: &Path) -> Result<(), TxtError> {
     let zip = ZipLibrary::new().map_err(|e| TxtError::Build(e.to_string()))?;
     let mut builder = EpubBuilder::new(zip).map_err(|e| TxtError::Build(e.to_string()))?;
 

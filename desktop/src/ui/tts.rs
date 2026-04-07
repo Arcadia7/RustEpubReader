@@ -21,8 +21,21 @@ const VOICE_PRESETS: &[(&str, &str)] = &[
     ("ja-JP-NanamiNeural", "Nanami (JP Female)"),
 ];
 
-const RATE_OPTIONS: &[(i32, &str)] = &[(-50, "-50%"), (-25, "-25%"), (0, "正常"), (25, "+25%"), (50, "+50%"), (100, "+100%")];
-const VOLUME_OPTIONS: &[(i32, &str)] = &[(-50, "-50%"), (-25, "-25%"), (0, "正常"), (25, "+25%"), (50, "+50%")];
+const RATE_OPTIONS: &[(i32, &str)] = &[
+    (-50, "-50%"),
+    (-25, "-25%"),
+    (0, "正常"),
+    (25, "+25%"),
+    (50, "+50%"),
+    (100, "+100%"),
+];
+const VOLUME_OPTIONS: &[(i32, &str)] = &[
+    (-50, "-50%"),
+    (-25, "-25%"),
+    (0, "正常"),
+    (25, "+25%"),
+    (50, "+50%"),
+];
 
 impl ReaderApp {
     /// Render TTS as a horizontal bar between toolbar and content (Edge-style).
@@ -44,8 +57,20 @@ impl ReaderApp {
             .frame(
                 egui::Frame::default()
                     .fill(bar_bg)
-                    .inner_margin(egui::Margin { left: 16, right: 16, top: 6, bottom: 6 })
-                    .stroke(Stroke::new(0.5, if dark { Color32::from_gray(55) } else { Color32::from_gray(210) })),
+                    .inner_margin(egui::Margin {
+                        left: 16,
+                        right: 16,
+                        top: 6,
+                        bottom: 6,
+                    })
+                    .stroke(Stroke::new(
+                        0.5,
+                        if dark {
+                            Color32::from_gray(55)
+                        } else {
+                            Color32::from_gray(210)
+                        },
+                    )),
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -59,7 +84,11 @@ impl ReaderApp {
                         .fill(accent)
                         .corner_radius(CornerRadius::same(4))
                         .min_size(Vec2::new(32.0, 26.0));
-                        if ui.add(play_btn).on_hover_text(self.i18n.t("tts.play")).clicked() {
+                        if ui
+                            .add(play_btn)
+                            .on_hover_text(self.i18n.t("tts.play"))
+                            .clicked()
+                        {
                             self.tts_start_playback();
                         }
                     } else {
@@ -71,7 +100,9 @@ impl ReaderApp {
                             self.i18n.t("tts.pause")
                         };
                         let pause_btn = egui::Button::new(
-                            egui::RichText::new(pause_icon).size(14.0).color(Color32::WHITE),
+                            egui::RichText::new(pause_icon)
+                                .size(14.0)
+                                .color(Color32::WHITE),
                         )
                         .fill(accent)
                         .corner_radius(CornerRadius::same(4))
@@ -90,12 +121,14 @@ impl ReaderApp {
                             }
                         }
 
-                        let stop_btn = egui::Button::new(
-                            egui::RichText::new("⏹").size(14.0),
-                        )
-                        .corner_radius(CornerRadius::same(4))
-                        .min_size(Vec2::new(32.0, 26.0));
-                        if ui.add(stop_btn).on_hover_text(self.i18n.t("tts.stop")).clicked() {
+                        let stop_btn = egui::Button::new(egui::RichText::new("⏹").size(14.0))
+                            .corner_radius(CornerRadius::same(4))
+                            .min_size(Vec2::new(32.0, 26.0));
+                        if ui
+                            .add(stop_btn)
+                            .on_hover_text(self.i18n.t("tts.stop"))
+                            .clicked()
+                        {
                             self.tts_stop_playback();
                         }
                     }
@@ -103,7 +136,11 @@ impl ReaderApp {
                     ui.separator();
 
                     // ── Voice selector ──
-                    ui.label(egui::RichText::new(self.i18n.t("tts.voice")).size(12.0).color(subtle_color));
+                    ui.label(
+                        egui::RichText::new(self.i18n.t("tts.voice"))
+                            .size(12.0)
+                            .color(subtle_color),
+                    );
                     egui::ComboBox::from_id_salt("tts_voice")
                         .width(120.0)
                         .selected_text(
@@ -115,12 +152,20 @@ impl ReaderApp {
                         )
                         .show_ui(ui, |ui| {
                             for (name, label) in VOICE_PRESETS {
-                                ui.selectable_value(&mut self.tts_voice_name, name.to_string(), *label);
+                                ui.selectable_value(
+                                    &mut self.tts_voice_name,
+                                    name.to_string(),
+                                    *label,
+                                );
                             }
                         });
 
                     // ── Rate selector ──
-                    ui.label(egui::RichText::new(self.i18n.t("tts.rate")).size(12.0).color(subtle_color));
+                    ui.label(
+                        egui::RichText::new(self.i18n.t("tts.rate"))
+                            .size(12.0)
+                            .color(subtle_color),
+                    );
                     egui::ComboBox::from_id_salt("tts_rate")
                         .width(64.0)
                         .selected_text(
@@ -137,7 +182,11 @@ impl ReaderApp {
                         });
 
                     // ── Volume selector ──
-                    ui.label(egui::RichText::new(self.i18n.t("tts.volume")).size(12.0).color(subtle_color));
+                    ui.label(
+                        egui::RichText::new(self.i18n.t("tts.volume"))
+                            .size(12.0)
+                            .color(subtle_color),
+                    );
                     egui::ComboBox::from_id_salt("tts_volume")
                         .width(64.0)
                         .selected_text(
@@ -180,7 +229,10 @@ impl ReaderApp {
     }
 
     pub fn tts_start_playback(&mut self) {
-        self.push_feedback_log(format!("[TTS] start_playback: voice={}, rate={}, volume={}", self.tts_voice_name, self.tts_rate, self.tts_volume));
+        self.push_feedback_log(format!(
+            "[TTS] start_playback: voice={}, rate={}, volume={}",
+            self.tts_voice_name, self.tts_rate, self.tts_volume
+        ));
         self.tts_stop_flag.store(false, Ordering::Relaxed);
         self.tts_playing = true;
         self.tts_paused = false;
@@ -190,7 +242,10 @@ impl ReaderApp {
         // Find first readable block
         self.tts_current_block = self.tts_next_readable_block(0);
         if let Some(total) = self.tts_block_count() {
-            self.push_feedback_log(format!("[TTS] chapter has {} blocks, first readable={}", total, self.tts_current_block));
+            self.push_feedback_log(format!(
+                "[TTS] chapter has {} blocks, first readable={}",
+                total, self.tts_current_block
+            ));
             if self.tts_current_block >= total {
                 self.push_feedback_log("[TTS] no readable blocks in chapter");
                 self.tts_stop_playback();
@@ -216,7 +271,9 @@ impl ReaderApp {
     /// Return the total number of blocks in the current chapter.
     fn tts_block_count(&self) -> Option<usize> {
         self.book.as_ref().and_then(|b| {
-            b.chapters.get(self.current_chapter).map(|ch| ch.blocks.len())
+            b.chapters
+                .get(self.current_chapter)
+                .map(|ch| ch.blocks.len())
         })
     }
 
@@ -226,9 +283,15 @@ impl ReaderApp {
         let total = self.tts_block_count().unwrap_or(0);
         while idx < total {
             if let Some(block) = self.book.as_ref().and_then(|b| {
-                b.chapters.get(self.current_chapter).and_then(|ch| ch.blocks.get(idx))
+                b.chapters
+                    .get(self.current_chapter)
+                    .and_then(|ch| ch.blocks.get(idx))
             }) {
-                if matches!(block, reader_core::epub::ContentBlock::Paragraph { .. } | reader_core::epub::ContentBlock::Heading { .. }) {
+                if matches!(
+                    block,
+                    reader_core::epub::ContentBlock::Paragraph { .. }
+                        | reader_core::epub::ContentBlock::Heading { .. }
+                ) {
                     return idx;
                 }
             }
@@ -239,19 +302,22 @@ impl ReaderApp {
 
     /// Get the text content of a block by index (empty string for non-text blocks).
     fn tts_block_text(&self, block_idx: usize) -> String {
-        self.book.as_ref().and_then(|b| {
-            b.chapters.get(self.current_chapter).and_then(|ch| {
-                ch.blocks.get(block_idx).map(|block| match block {
-                    reader_core::epub::ContentBlock::Paragraph { spans } => {
-                        spans.iter().map(|s| s.text.as_str()).collect::<String>()
-                    }
-                    reader_core::epub::ContentBlock::Heading { spans, .. } => {
-                        spans.iter().map(|s| s.text.as_str()).collect::<String>()
-                    }
-                    _ => String::new(),
+        self.book
+            .as_ref()
+            .and_then(|b| {
+                b.chapters.get(self.current_chapter).and_then(|ch| {
+                    ch.blocks.get(block_idx).map(|block| match block {
+                        reader_core::epub::ContentBlock::Paragraph { spans } => {
+                            spans.iter().map(|s| s.text.as_str()).collect::<String>()
+                        }
+                        reader_core::epub::ContentBlock::Heading { spans, .. } => {
+                            spans.iter().map(|s| s.text.as_str()).collect::<String>()
+                        }
+                        _ => String::new(),
+                    })
                 })
             })
-        }).unwrap_or_default()
+            .unwrap_or_default()
     }
 
     fn tts_advance_to_next_block(&mut self) {
@@ -332,10 +398,7 @@ impl ReaderApp {
     }
 
     /// Spawn a background thread to synthesize `text` and return a handle to poll.
-    fn tts_spawn_synthesis(
-        &self,
-        text: String,
-    ) -> Arc<std::sync::Mutex<Option<Vec<u8>>>> {
+    fn tts_spawn_synthesis(&self, text: String) -> Arc<std::sync::Mutex<Option<Vec<u8>>>> {
         let voice_name = self.tts_voice_name.clone();
         let rate = self.tts_rate;
         let volume = self.tts_volume;
@@ -349,7 +412,13 @@ impl ReaderApp {
         let audio_ready2 = audio_ready.clone();
 
         let text_preview: String = text.chars().take(30).collect();
-        crate::app::dbg_log(&logs, format!("[TTS] synthesize: voice={}, text={}...", voice_name, text_preview));
+        crate::app::dbg_log(
+            &logs,
+            format!(
+                "[TTS] synthesize: voice={}, text={}...",
+                voice_name, text_preview
+            ),
+        );
 
         std::thread::spawn(move || {
             if stop_flag.load(Ordering::Relaxed) {
@@ -365,7 +434,14 @@ impl ReaderApp {
                 let voice = match voice {
                     Some(v) => v,
                     None => {
-                        crate::app::dbg_log(&logs, format!("[TTS] ERROR: voice '{}' not found in {} available voices", voice_name, voices.len()));
+                        crate::app::dbg_log(
+                            &logs,
+                            format!(
+                                "[TTS] ERROR: voice '{}' not found in {} available voices",
+                                voice_name,
+                                voices.len()
+                            ),
+                        );
                         return Err("Voice not found".into());
                     }
                 };
@@ -380,7 +456,14 @@ impl ReaderApp {
             match result {
                 Ok(bytes) => {
                     let elapsed = t0.elapsed();
-                    crate::app::dbg_log(&logs, format!("[TTS] synthesized {} bytes in {:.1}s", bytes.len(), elapsed.as_secs_f64()));
+                    crate::app::dbg_log(
+                        &logs,
+                        format!(
+                            "[TTS] synthesized {} bytes in {:.1}s",
+                            bytes.len(),
+                            elapsed.as_secs_f64()
+                        ),
+                    );
                     *audio_ready2.lock().unwrap() = Some(bytes);
                 }
                 Err(e) => {

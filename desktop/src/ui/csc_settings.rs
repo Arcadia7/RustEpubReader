@@ -11,19 +11,28 @@ impl ReaderApp {
         ui.label(self.i18n.t("csc.mode"));
         ui.horizontal(|ui| {
             if ui
-                .selectable_label(self.csc_mode == CorrectionMode::None, self.i18n.t("csc.mode_none"))
+                .selectable_label(
+                    self.csc_mode == CorrectionMode::None,
+                    self.i18n.t("csc.mode_none"),
+                )
                 .clicked()
             {
                 self.csc_mode = CorrectionMode::None;
             }
             if ui
-                .selectable_label(self.csc_mode == CorrectionMode::ReadOnly, self.i18n.t("csc.mode_readonly"))
+                .selectable_label(
+                    self.csc_mode == CorrectionMode::ReadOnly,
+                    self.i18n.t("csc.mode_readonly"),
+                )
                 .clicked()
             {
                 self.csc_mode = CorrectionMode::ReadOnly;
             }
             if ui
-                .selectable_label(self.csc_mode == CorrectionMode::ReadWrite, self.i18n.t("csc.mode_readwrite"))
+                .selectable_label(
+                    self.csc_mode == CorrectionMode::ReadWrite,
+                    self.i18n.t("csc.mode_readwrite"),
+                )
                 .clicked()
             {
                 self.csc_mode = CorrectionMode::ReadWrite;
@@ -36,19 +45,28 @@ impl ReaderApp {
             ui.label(self.i18n.t("csc.threshold"));
             ui.horizontal(|ui| {
                 if ui
-                    .selectable_label(self.csc_threshold == CscThreshold::Conservative, self.i18n.t("csc.conservative"))
+                    .selectable_label(
+                        self.csc_threshold == CscThreshold::Conservative,
+                        self.i18n.t("csc.conservative"),
+                    )
                     .clicked()
                 {
                     self.csc_threshold = CscThreshold::Conservative;
                 }
                 if ui
-                    .selectable_label(self.csc_threshold == CscThreshold::Standard, self.i18n.t("csc.standard"))
+                    .selectable_label(
+                        self.csc_threshold == CscThreshold::Standard,
+                        self.i18n.t("csc.standard"),
+                    )
                     .clicked()
                 {
                     self.csc_threshold = CscThreshold::Standard;
                 }
                 if ui
-                    .selectable_label(self.csc_threshold == CscThreshold::Aggressive, self.i18n.t("csc.aggressive"))
+                    .selectable_label(
+                        self.csc_threshold == CscThreshold::Aggressive,
+                        self.i18n.t("csc.aggressive"),
+                    )
                     .clicked()
                 {
                     self.csc_threshold = CscThreshold::Aggressive;
@@ -77,8 +95,8 @@ impl ReaderApp {
                         ui.label("⏳");
                         ui.label(self.i18n.t("csc.downloading"));
                     });
-                    let bar = egui::ProgressBar::new(progress)
-                        .text(format!("{:.0}%", progress * 100.0));
+                    let bar =
+                        egui::ProgressBar::new(progress).text(format!("{:.0}%", progress * 100.0));
                     ui.add(bar);
                 }
                 ModelStatus::Downloaded => {
@@ -99,7 +117,10 @@ impl ReaderApp {
                 ModelStatus::Ready => {
                     ui.horizontal(|ui| {
                         ui.label("✓");
-                        ui.colored_label(egui::Color32::from_rgb(80, 200, 120), self.i18n.t("csc.model_ready"));
+                        ui.colored_label(
+                            egui::Color32::from_rgb(80, 200, 120),
+                            self.i18n.t("csc.model_ready"),
+                        );
                     });
                 }
                 ModelStatus::Error(msg) => {
@@ -143,7 +164,11 @@ impl ReaderApp {
                 ui.horizontal(|ui| {
                     ui.label(self.i18n.t("csc.enter_code"));
                     ui.monospace(user_code);
-                    if ui.small_button("📋").on_hover_text(self.i18n.t("csc.copy_code")).clicked() {
+                    if ui
+                        .small_button("📋")
+                        .on_hover_text(self.i18n.t("csc.copy_code"))
+                        .clicked()
+                    {
                         ui.ctx().copy_text(user_code.clone());
                     }
                 });
@@ -167,7 +192,11 @@ impl ReaderApp {
     /// Check model status on startup.
     pub fn csc_check_model_status(&mut self) {
         let model_dir = reader_core::csc::model::model_dir(&self.data_dir);
-        self.push_feedback_log(format!("[CSC] check_model_status: data_dir={}, model_dir={}", self.data_dir, model_dir.display()));
+        self.push_feedback_log(format!(
+            "[CSC] check_model_status: data_dir={}, model_dir={}",
+            self.data_dir,
+            model_dir.display()
+        ));
         let available = reader_core::csc::model::is_model_available(&self.data_dir);
         self.push_feedback_log(format!("[CSC] is_model_available={}", available));
         if available {
@@ -185,9 +214,18 @@ impl ReaderApp {
                 if let Ok(entries) = std::fs::read_dir(&model_dir) {
                     let names: Vec<String> = entries
                         .filter_map(|e| e.ok())
-                        .map(|e| format!("{}({}B)", e.file_name().to_string_lossy(), e.metadata().map(|m| m.len()).unwrap_or(0)))
+                        .map(|e| {
+                            format!(
+                                "{}({}B)",
+                                e.file_name().to_string_lossy(),
+                                e.metadata().map(|m| m.len()).unwrap_or(0)
+                            )
+                        })
                         .collect();
-                    self.push_feedback_log(format!("[CSC] model_dir contents: [{}]", names.join(", ")));
+                    self.push_feedback_log(format!(
+                        "[CSC] model_dir contents: [{}]",
+                        names.join(", ")
+                    ));
                 }
             } else {
                 self.push_feedback_log("[CSC] model_dir does not exist");
@@ -209,7 +247,14 @@ impl ReaderApp {
             let _ = std::fs::create_dir_all(&dir);
             let files = reader_core::csc::model::required_files();
             let total = files.len() as f32;
-            crate::app::dbg_log(&logs, format!("[CSC] download thread: {} files to fetch, dir={}", files.len(), dir.display()));
+            crate::app::dbg_log(
+                &logs,
+                format!(
+                    "[CSC] download thread: {} files to fetch, dir={}",
+                    files.len(),
+                    dir.display()
+                ),
+            );
 
             for (i, (url, filename)) in files.iter().enumerate() {
                 *progress.lock().unwrap() = i as f32 / total;
@@ -218,28 +263,59 @@ impl ReaderApp {
                 }
 
                 let dest = dir.join(filename);
-                crate::app::dbg_log(&logs, format!("[CSC] downloading [{}/{}] {} → {}", i + 1, files.len(), url, dest.display()));
+                crate::app::dbg_log(
+                    &logs,
+                    format!(
+                        "[CSC] downloading [{}/{}] {} → {}",
+                        i + 1,
+                        files.len(),
+                        url,
+                        dest.display()
+                    ),
+                );
                 match reqwest::blocking::get(*url) {
                     Ok(resp) => {
                         let status = resp.status();
                         if status.is_success() {
                             match resp.bytes() {
                                 Ok(bytes) => {
-                                    crate::app::dbg_log(&logs, format!("[CSC] downloaded {} ({} bytes)", filename, bytes.len()));
+                                    crate::app::dbg_log(
+                                        &logs,
+                                        format!(
+                                            "[CSC] downloaded {} ({} bytes)",
+                                            filename,
+                                            bytes.len()
+                                        ),
+                                    );
                                     if let Err(e) = std::fs::write(&dest, &bytes) {
-                                        crate::app::dbg_log(&logs, format!("[CSC] ERROR writing {}: {}", filename, e));
+                                        crate::app::dbg_log(
+                                            &logs,
+                                            format!("[CSC] ERROR writing {}: {}", filename, e),
+                                        );
                                     }
                                 }
                                 Err(e) => {
-                                    crate::app::dbg_log(&logs, format!("[CSC] ERROR reading response body for {}: {}", filename, e));
+                                    crate::app::dbg_log(
+                                        &logs,
+                                        format!(
+                                            "[CSC] ERROR reading response body for {}: {}",
+                                            filename, e
+                                        ),
+                                    );
                                 }
                             }
                         } else {
-                            crate::app::dbg_log(&logs, format!("[CSC] ERROR HTTP {} for {}", status, url));
+                            crate::app::dbg_log(
+                                &logs,
+                                format!("[CSC] ERROR HTTP {} for {}", status, url),
+                            );
                         }
                     }
                     Err(e) => {
-                        crate::app::dbg_log(&logs, format!("[CSC] ERROR request failed for {}: {}", url, e));
+                        crate::app::dbg_log(
+                            &logs,
+                            format!("[CSC] ERROR request failed for {}: {}", url, e),
+                        );
                     }
                 }
             }
@@ -258,7 +334,10 @@ impl ReaderApp {
             if p >= 1.0 {
                 // Download complete — verify
                 let available = reader_core::csc::model::is_model_available(&self.data_dir);
-                self.push_feedback_log(format!("[CSC] poll_download complete: is_available={}", available));
+                self.push_feedback_log(format!(
+                    "[CSC] poll_download complete: is_available={}",
+                    available
+                ));
                 if available {
                     let verified = reader_core::csc::model::verify_model(&self.data_dir);
                     self.push_feedback_log(format!("[CSC] poll_download verify={}", verified));
@@ -281,15 +360,16 @@ impl ReaderApp {
     pub fn csc_load_model(&mut self) {
         self.push_feedback_log("[CSC] load_model: begin");
         self.csc_model_status = ModelStatus::Loading;
-        let mut engine = reader_core::csc::CscEngine::new(
-            self.csc_mode.clone(),
-            self.csc_threshold.clone(),
-        );
+        let mut engine =
+            reader_core::csc::CscEngine::new(self.csc_mode.clone(), self.csc_threshold.clone());
         let t0 = std::time::Instant::now();
         match engine.load(&self.data_dir) {
             Ok(()) => {
                 let elapsed = t0.elapsed();
-                self.push_feedback_log(format!("[CSC] load_model: OK in {:.1}s", elapsed.as_secs_f64()));
+                self.push_feedback_log(format!(
+                    "[CSC] load_model: OK in {:.1}s",
+                    elapsed.as_secs_f64()
+                ));
                 *self.csc_engine.lock().unwrap() = Some(engine);
                 self.csc_model_status = ModelStatus::Ready;
                 // Spawn background worker and trigger current chapter

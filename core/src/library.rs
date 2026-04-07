@@ -540,10 +540,22 @@ impl Library {
             cached_metadata.or_else(|| crate::epub::EpubBook::read_metadata(&entry.path));
 
         // Preserve annotation data from existing config
-        let bookmarks = existing.as_ref().map(|c| c.bookmarks.clone()).unwrap_or_default();
-        let highlights = existing.as_ref().map(|c| c.highlights.clone()).unwrap_or_default();
-        let notes = existing.as_ref().map(|c| c.notes.clone()).unwrap_or_default();
-        let corrections = existing.as_ref().map(|c| c.corrections.clone()).unwrap_or_default();
+        let bookmarks = existing
+            .as_ref()
+            .map(|c| c.bookmarks.clone())
+            .unwrap_or_default();
+        let highlights = existing
+            .as_ref()
+            .map(|c| c.highlights.clone())
+            .unwrap_or_default();
+        let notes = existing
+            .as_ref()
+            .map(|c| c.notes.clone())
+            .unwrap_or_default();
+        let corrections = existing
+            .as_ref()
+            .map(|c| c.corrections.clone())
+            .unwrap_or_default();
         let reading_stats = existing.as_ref().and_then(|c| c.reading_stats.clone());
 
         let cfg = BookConfig {

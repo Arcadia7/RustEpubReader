@@ -34,11 +34,9 @@ impl CscTokenizer {
         tokenizer.with_normalizer(Some(tokenizers::normalizers::BertNormalizer::default()));
 
         // For Chinese CSC, each character is its own token — add Chinese char splitter
-        tokenizer.with_pre_tokenizer(Some(
-            tokenizers::pre_tokenizers::sequence::Sequence::new(vec![
-                tokenizers::pre_tokenizers::bert::BertPreTokenizer.into(),
-            ]),
-        ));
+        tokenizer.with_pre_tokenizer(Some(tokenizers::pre_tokenizers::sequence::Sequence::new(
+            vec![tokenizers::pre_tokenizers::bert::BertPreTokenizer.into()],
+        )));
 
         Ok(Self { inner: tokenizer })
     }
@@ -51,8 +49,11 @@ impl CscTokenizer {
             .map_err(|e| format!("Tokenization error: {}", e))?;
 
         let mut input_ids: Vec<i64> = encoding.get_ids().iter().map(|&id| id as i64).collect();
-        let mut attention_mask: Vec<i64> =
-            encoding.get_attention_mask().iter().map(|&m| m as i64).collect();
+        let mut attention_mask: Vec<i64> = encoding
+            .get_attention_mask()
+            .iter()
+            .map(|&m| m as i64)
+            .collect();
         let mut token_type_ids: Vec<i64> =
             encoding.get_type_ids().iter().map(|&t| t as i64).collect();
 

@@ -1,4 +1,4 @@
-﻿use std::cell::Cell;
+use std::cell::Cell;
 use std::cell::RefCell;
 use std::sync::Arc;
 
@@ -21,9 +21,15 @@ fn set_spacing(line: f32, para: f32, indent: f32) {
     PARA_SPACING.set(para);
     TEXT_INDENT.set(indent);
 }
-fn line_spacing() -> f32 { LINE_SPACING.get() }
-fn para_spacing() -> f32 { PARA_SPACING.get() }
-fn text_indent()  -> f32 { TEXT_INDENT.get()  }
+fn line_spacing() -> f32 {
+    LINE_SPACING.get()
+}
+fn para_spacing() -> f32 {
+    PARA_SPACING.get()
+}
+fn text_indent() -> f32 {
+    TEXT_INDENT.get()
+}
 
 // ── Thread-local deferred actions & per-frame block galley cache ──
 
@@ -67,12 +73,14 @@ const TTS_ACCENT: Color32 = Color32::from_rgb(56, 132, 255);
 /// Paint TTS read-along highlight: soft background + left accent bar.
 fn paint_tts_highlight(ui: &egui::Ui, rect: egui::Rect) {
     let r = rect.expand2(egui::vec2(4.0, 2.0));
-    ui.painter().rect_filled(r, egui::CornerRadius::same(3), TTS_BG);
+    ui.painter()
+        .rect_filled(r, egui::CornerRadius::same(3), TTS_BG);
     let bar = egui::Rect::from_min_size(
         egui::pos2(r.left() - 3.0, r.top()),
         egui::vec2(3.0, r.height()),
     );
-    ui.painter().rect_filled(bar, egui::CornerRadius::same(1), TTS_ACCENT);
+    ui.painter()
+        .rect_filled(bar, egui::CornerRadius::same(1), TTS_ACCENT);
 }
 
 /// Build mapping from block char_offset → galley char index.
@@ -81,7 +89,11 @@ fn build_csc_char_mapping(spans: &[TextSpan], font_size: f32, max_width: f32) ->
     let mut mapping = Vec::new();
     let mut galley_pos = 0usize;
     for (si, span) in spans.iter().enumerate() {
-        let leading = if si == 0 { font_size * text_indent() } else { 0.0 };
+        let leading = if si == 0 {
+            font_size * text_indent()
+        } else {
+            0.0
+        };
         let wrapped = wrap_cjk_text(&span.text, font_size, max_width, leading);
         let orig_chars: Vec<char> = span.text.chars().collect();
         let wrap_chars: Vec<char> = wrapped.chars().collect();
@@ -114,9 +126,9 @@ fn highlight_bg_color(color: &reader_core::library::HighlightColor) -> Color32 {
     use reader_core::library::HighlightColor;
     match color {
         HighlightColor::Yellow => Color32::from_rgba_unmultiplied(255, 245, 140, 70),
-        HighlightColor::Green  => Color32::from_rgba_unmultiplied(144, 238, 144, 60),
-        HighlightColor::Blue   => Color32::from_rgba_unmultiplied(135, 206, 250, 60),
-        HighlightColor::Pink   => Color32::from_rgba_unmultiplied(255, 182, 193, 60),
+        HighlightColor::Green => Color32::from_rgba_unmultiplied(144, 238, 144, 60),
+        HighlightColor::Blue => Color32::from_rgba_unmultiplied(135, 206, 250, 60),
+        HighlightColor::Pink => Color32::from_rgba_unmultiplied(255, 182, 193, 60),
     }
 }
 
@@ -125,15 +137,19 @@ fn highlight_text_color(color: &reader_core::library::HighlightColor) -> Color32
     use reader_core::library::HighlightColor;
     match color {
         HighlightColor::Yellow => Color32::from_rgb(120, 90, 0),
-        HighlightColor::Green  => Color32::from_rgb(20, 100, 30),
-        HighlightColor::Blue   => Color32::from_rgb(15, 60, 130),
-        HighlightColor::Pink   => Color32::from_rgb(140, 20, 60),
+        HighlightColor::Green => Color32::from_rgb(20, 100, 30),
+        HighlightColor::Blue => Color32::from_rgb(15, 60, 130),
+        HighlightColor::Pink => Color32::from_rgb(140, 20, 60),
     }
 }
 
 impl ReaderApp {
     pub fn recalculate_pages(&mut self, available_height: f32, max_width: f32) {
-        set_spacing(self.line_spacing, self.para_spacing, self.text_indent as f32);
+        set_spacing(
+            self.line_spacing,
+            self.para_spacing,
+            self.text_indent as f32,
+        );
         self.page_block_ranges.clear();
         if let Some(book) = &self.book {
             if let Some(chapter) = book.chapters.get(self.current_chapter) {
@@ -178,7 +194,11 @@ impl ReaderApp {
 
     pub fn render_reader(&mut self, ui: &mut egui::Ui) {
         // Push current typography settings into thread-locals
-        set_spacing(self.line_spacing, self.para_spacing, self.text_indent as f32);
+        set_spacing(
+            self.line_spacing,
+            self.para_spacing,
+            self.text_indent as f32,
+        );
 
         // Clear per-frame block galley cache
         BLOCK_GALLEYS.with(|bg| bg.borrow_mut().clear());
@@ -300,16 +320,28 @@ impl ReaderApp {
 
                 // Build per-block highlight ranges for the current chapter
                 // Each block can have multiple highlight ranges with different colors
-                let highlight_ranges: std::collections::HashMap<usize, Vec<(usize, usize, reader_core::library::HighlightColor)>> = self
+                let highlight_ranges: std::collections::HashMap<
+                    usize,
+                    Vec<(usize, usize, reader_core::library::HighlightColor)>,
+                > = self
                     .book_config
                     .as_ref()
                     .map(|cfg| {
-                        let mut map: std::collections::HashMap<usize, Vec<(usize, usize, reader_core::library::HighlightColor)>> = std::collections::HashMap::new();
-                        for h in cfg.highlights.iter().filter(|h| h.chapter == self.current_chapter) {
+                        let mut map: std::collections::HashMap<
+                            usize,
+                            Vec<(usize, usize, reader_core::library::HighlightColor)>,
+                        > = std::collections::HashMap::new();
+                        for h in cfg
+                            .highlights
+                            .iter()
+                            .filter(|h| h.chapter == self.current_chapter)
+                        {
                             // Only single-block highlights supported for now
-                            map.entry(h.start_block)
-                                .or_default()
-                                .push((h.start_offset, h.end_offset, h.color.clone()));
+                            map.entry(h.start_block).or_default().push((
+                                h.start_offset,
+                                h.end_offset,
+                                h.color.clone(),
+                            ));
                         }
                         map
                     })
@@ -1014,7 +1046,8 @@ impl ReaderApp {
                         );
                     }
                     if !self.show_sharing_panel
-                        && !self.show_stats && !self.show_export_dialog
+                        && !self.show_stats
+                        && !self.show_export_dialog
                         && self.text_selection.is_none()
                         && self.clicked_highlight_id.is_none()
                         && self.csc_popup.is_none()
@@ -1168,7 +1201,8 @@ impl ReaderApp {
         }
 
         // ── Custom text selection state machine ──
-        let block_galleys: Vec<BlockGalleyEntry> = BLOCK_GALLEYS.with(|bg| bg.borrow_mut().drain(..).collect());
+        let block_galleys: Vec<BlockGalleyEntry> =
+            BLOCK_GALLEYS.with(|bg| bg.borrow_mut().drain(..).collect());
 
         // Detect primary pointer press / drag / release for selection
         let pointer_pos = ui.ctx().input(|i| i.pointer.interact_pos());
@@ -1287,7 +1321,10 @@ impl ReaderApp {
                                 self.editing_note_buf.clear();
                             }
                             // Position popup above the click point
-                            if let Some((_, _, rect, _)) = block_galleys.iter().find(|(idx, _, _, _)| *idx == press_block) {
+                            if let Some((_, _, rect, _)) = block_galleys
+                                .iter()
+                                .find(|(idx, _, _, _)| *idx == press_block)
+                            {
                                 self.hl_note_toolbar_pos = egui::pos2(rect.center().x, rect.min.y);
                             }
                             // Clear any text selection
@@ -1295,9 +1332,8 @@ impl ReaderApp {
                         }
                     }
                     // Plain click on text (no highlight, no drag) → page turn
-                    let hit_csc_rect = CSC_RECTS.with(|rects| {
-                        rects.borrow().iter().any(|cr| cr.rect.contains(press_pos))
-                    });
+                    let hit_csc_rect = CSC_RECTS
+                        .with(|rects| rects.borrow().iter().any(|cr| cr.rect.contains(press_pos)));
                     if !handled_as_highlight
                         && !hit_csc_rect
                         && !self.scroll_mode
@@ -1313,7 +1349,10 @@ impl ReaderApp {
                                 if press_pos.x < page_rect.center().x {
                                     if is_dual_column {
                                         if self.current_page >= 2 {
-                                            self.trigger_page_animation_to(self.current_page - 2, -1.0);
+                                            self.trigger_page_animation_to(
+                                                self.current_page - 2,
+                                                -1.0,
+                                            );
                                         } else if self.current_chapter > 0 {
                                             self.capture_cross_chapter_snapshot();
                                             self.prev_chapter();
@@ -1326,7 +1365,10 @@ impl ReaderApp {
                                 } else {
                                     if is_dual_column {
                                         if self.current_page + 2 < self.total_pages {
-                                            self.trigger_page_animation_to(self.current_page + 2, 1.0);
+                                            self.trigger_page_animation_to(
+                                                self.current_page + 2,
+                                                1.0,
+                                            );
                                         } else {
                                             self.capture_cross_chapter_snapshot();
                                             self.next_chapter();
@@ -1350,7 +1392,10 @@ impl ReaderApp {
                         } else {
                             // Position the toolbar above the start of the selection
                             let (sel_start_block, _) = sel.normalized();
-                            if let Some((_, _, rect, _)) = block_galleys.iter().find(|(idx, _, _, _)| *idx == sel_start_block) {
+                            if let Some((_, _, rect, _)) = block_galleys
+                                .iter()
+                                .find(|(idx, _, _, _)| *idx == sel_start_block)
+                            {
                                 self.sel_toolbar_pos = egui::pos2(rect.center().x, rect.top());
                             }
                         }
@@ -1363,11 +1408,19 @@ impl ReaderApp {
         if let Some(sel) = &self.text_selection {
             let (sb, sc, eb, ec) = sel.normalized_range();
             for (idx, galley, rect, text) in &block_galleys {
-                if *idx < sb || *idx > eb { continue; }
+                if *idx < sb || *idx > eb {
+                    continue;
+                }
                 let char_len = text.chars().count();
                 let sel_start = if *idx == sb { sc } else { 0 };
-                let sel_end = if *idx == eb { ec.min(char_len) } else { char_len };
-                if sel_start >= sel_end { continue; }
+                let sel_end = if *idx == eb {
+                    ec.min(char_len)
+                } else {
+                    char_len
+                };
+                if sel_start >= sel_end {
+                    continue;
+                }
                 // Convert char offsets to galley cursors
                 let c_start = galley.from_ccursor(egui::text::CCursor::new(sel_start));
                 let c_end = galley.from_ccursor(egui::text::CCursor::new(sel_end));
@@ -1375,17 +1428,18 @@ impl ReaderApp {
                 let start_row = c_start.rcursor.row;
                 let end_row = c_end.rcursor.row;
                 for row_idx in start_row..=end_row {
-                    if row_idx >= galley.rows.len() { break; }
+                    if row_idx >= galley.rows.len() {
+                        break;
+                    }
                     let row = &galley.rows[row_idx];
                     let row_min_x = if row_idx == start_row {
                         // Start of selection within first row
-                        
+
                         galley.pos_from_cursor(&c_start).min.x
                     } else {
                         row.rect.min.x
                     };
                     let row_max_x = if row_idx == end_row {
-                        
                         galley.pos_from_cursor(&c_end).max.x
                     } else {
                         row.rect.max.x
@@ -1400,18 +1454,28 @@ impl ReaderApp {
         }
 
         // ── Extract selected text from block galleys ──
-        let selected_text: String = self.text_selection.as_ref()
+        let selected_text: String = self
+            .text_selection
+            .as_ref()
             .filter(|s| !s.is_dragging || primary_down)
             .map(|sel| {
                 let (sb, sc, eb, ec) = sel.normalized_range();
                 let mut result = String::new();
                 for (idx, _, _, text) in &block_galleys {
-                    if *idx < sb || *idx > eb { continue; }
+                    if *idx < sb || *idx > eb {
+                        continue;
+                    }
                     let chars: Vec<char> = text.chars().collect();
                     let start = if *idx == sb { sc } else { 0 };
-                    let end = if *idx == eb { ec.min(chars.len()) } else { chars.len() };
+                    let end = if *idx == eb {
+                        ec.min(chars.len())
+                    } else {
+                        chars.len()
+                    };
                     if start < end {
-                        if !result.is_empty() { result.push('\n'); }
+                        if !result.is_empty() {
+                            result.push('\n');
+                        }
                         result.extend(&chars[start..end]);
                     }
                 }
@@ -1426,7 +1490,8 @@ impl ReaderApp {
                 let has_hl = self.book_config.as_ref().is_some_and(|cfg| {
                     cfg.highlights.iter().any(|h| {
                         h.chapter == self.current_chapter
-                            && h.start_block >= sb && h.start_block <= eb
+                            && h.start_block >= sb
+                            && h.start_block <= eb
                     })
                 });
                 let res = show_selection_toolbar(
@@ -1447,10 +1512,16 @@ impl ReaderApp {
                         if let Some(cfg) = &mut self.book_config {
                             let (sb, sc, eb, ec) = sel_range;
                             for (idx, _, _, text) in &block_galleys {
-                                if *idx < sb || *idx > eb { continue; }
+                                if *idx < sb || *idx > eb {
+                                    continue;
+                                }
                                 let char_len = text.chars().count();
                                 let start = if *idx == sb { sc } else { 0 };
-                                let end = if *idx == eb { ec.min(char_len) } else { char_len };
+                                let end = if *idx == eb {
+                                    ec.min(char_len)
+                                } else {
+                                    char_len
+                                };
                                 if start < end {
                                     cfg.highlights.push(reader_core::library::Highlight {
                                         id: format!("{}-{}", reader_core::now_secs(), idx),
@@ -1473,7 +1544,8 @@ impl ReaderApp {
                         if let Some(cfg) = &mut self.book_config {
                             cfg.highlights.retain(|h| {
                                 !(h.chapter == self.current_chapter
-                                    && h.start_block >= sb && h.start_block <= eb)
+                                    && h.start_block >= sb
+                                    && h.start_block <= eb)
                             });
                             cfg.save(&self.data_dir);
                         }
@@ -1537,10 +1609,16 @@ impl ReaderApp {
                     let (sb, sc, eb, ec) = sel_range;
                     let replace_chars: Vec<char> = self.csc_custom_replace_buf.chars().collect();
                     for (idx, _, _, block_text) in &block_galleys {
-                        if *idx < sb || *idx > eb { continue; }
+                        if *idx < sb || *idx > eb {
+                            continue;
+                        }
                         let block_chars: Vec<char> = block_text.chars().collect();
                         let start = if *idx == sb { sc } else { 0 };
-                        let end = if *idx == eb { ec.min(block_chars.len()) } else { block_chars.len() };
+                        let end = if *idx == eb {
+                            ec.min(block_chars.len())
+                        } else {
+                            block_chars.len()
+                        };
                         // Map selected chars 1:1 to replacement chars
                         for (i, pos) in (start..end).enumerate() {
                             let original = block_chars[pos].to_string();
@@ -1555,7 +1633,8 @@ impl ReaderApp {
                             // Insert into csc_cache as Accepted
                             let key = (self.current_chapter, *idx);
                             let corrs = self.csc_cache.entry(key).or_default();
-                            if let Some(existing) = corrs.iter_mut().find(|c| c.char_offset == pos) {
+                            if let Some(existing) = corrs.iter_mut().find(|c| c.char_offset == pos)
+                            {
                                 existing.corrected = corrected.clone();
                                 existing.status = reader_core::epub::CorrectionStatus::Accepted;
                             } else {
@@ -1577,14 +1656,15 @@ impl ReaderApp {
                                     rec.corrected = corrected;
                                     rec.status = "accepted".to_string();
                                 } else {
-                                    cfg.corrections.push(reader_core::library::CorrectionRecord {
-                                        chapter: self.current_chapter,
-                                        block_idx: *idx,
-                                        char_offset: pos,
-                                        original,
-                                        corrected,
-                                        status: "accepted".to_string(),
-                                    });
+                                    cfg.corrections
+                                        .push(reader_core::library::CorrectionRecord {
+                                            chapter: self.current_chapter,
+                                            block_idx: *idx,
+                                            char_offset: pos,
+                                            original,
+                                            corrected,
+                                            status: "accepted".to_string(),
+                                        });
                                 }
                             }
                         }
@@ -1630,21 +1710,28 @@ impl ReaderApp {
                                     .strong()
                                     .size(13.0),
                             );
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                // Delete highlight button
-                                if ui.small_button("🗑").on_hover_text(self.i18n.t("context.delete_highlight")).clicked() {
-                                    if let Some(cfg) = &mut self.book_config {
-                                        cfg.notes.retain(|n| n.highlight_id != hl_id);
-                                        cfg.highlights.retain(|h| h.id != hl_id);
-                                        cfg.save(&self.data_dir);
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    // Delete highlight button
+                                    if ui
+                                        .small_button("🗑")
+                                        .on_hover_text(self.i18n.t("context.delete_highlight"))
+                                        .clicked()
+                                    {
+                                        if let Some(cfg) = &mut self.book_config {
+                                            cfg.notes.retain(|n| n.highlight_id != hl_id);
+                                            cfg.highlights.retain(|h| h.id != hl_id);
+                                            cfg.save(&self.data_dir);
+                                        }
+                                        close_popup = true;
                                     }
-                                    close_popup = true;
-                                }
-                                // Close button
-                                if ui.small_button("✕").clicked() {
-                                    close_popup = true;
-                                }
-                            });
+                                    // Close button
+                                    if ui.small_button("✕").clicked() {
+                                        close_popup = true;
+                                    }
+                                },
+                            );
                         });
 
                         ui.separator();
@@ -1660,13 +1747,18 @@ impl ReaderApp {
                         // Save button
                         ui.horizontal(|ui| {
                             if ui.button(self.i18n.t("context.save_note")).clicked()
-                                || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.ctrl))
+                                || (response.lost_focus()
+                                    && ui.input(|i| {
+                                        i.key_pressed(egui::Key::Enter) && i.modifiers.ctrl
+                                    }))
                             {
                                 if let Some(cfg) = &mut self.book_config {
                                     if self.editing_note_buf.trim().is_empty() {
                                         // Remove note if empty
                                         cfg.notes.retain(|n| n.highlight_id != hl_id);
-                                    } else if let Some(note) = cfg.notes.iter_mut().find(|n| n.highlight_id == hl_id) {
+                                    } else if let Some(note) =
+                                        cfg.notes.iter_mut().find(|n| n.highlight_id == hl_id)
+                                    {
                                         note.content = self.editing_note_buf.clone();
                                         note.updated_at = reader_core::now_secs();
                                     } else {
@@ -1750,15 +1842,9 @@ impl ReaderApp {
                         egui::Frame::popup(ui.style()).show(ui, |ui| {
                             // Info line: original → corrected (confidence%)
                             ui.horizontal(|ui| {
-                                ui.colored_label(
-                                    Color32::from_rgb(220, 60, 50),
-                                    &popup.original,
-                                );
+                                ui.colored_label(Color32::from_rgb(220, 60, 50), &popup.original);
                                 ui.label("→");
-                                ui.colored_label(
-                                    Color32::from_rgb(60, 180, 80),
-                                    &popup.corrected,
-                                );
+                                ui.colored_label(Color32::from_rgb(60, 180, 80), &popup.corrected);
                                 ui.label(format!(
                                     "  {}：{:.1}%",
                                     self.i18n.t("csc.confidence"),
@@ -1792,7 +1878,10 @@ impl ReaderApp {
                 if let Some(new_status) = action {
                     // Update status in csc_cache
                     if let Some(corrs) = self.csc_cache.get_mut(&(popup.chapter, popup.block_idx)) {
-                        if let Some(c) = corrs.iter_mut().find(|c| c.char_offset == popup.char_offset) {
+                        if let Some(c) = corrs
+                            .iter_mut()
+                            .find(|c| c.char_offset == popup.char_offset)
+                        {
                             c.status = new_status.clone();
                         }
                     }
@@ -1812,21 +1901,26 @@ impl ReaderApp {
                         }) {
                             rec.status = status_str.to_string();
                         } else {
-                            cfg.corrections.push(reader_core::library::CorrectionRecord {
-                                chapter: popup.chapter,
-                                block_idx: popup.block_idx,
-                                char_offset: popup.char_offset,
-                                original: popup.original.clone(),
-                                corrected: popup.corrected.clone(),
-                                status: status_str.to_string(),
-                            });
+                            cfg.corrections
+                                .push(reader_core::library::CorrectionRecord {
+                                    chapter: popup.chapter,
+                                    block_idx: popup.block_idx,
+                                    char_offset: popup.char_offset,
+                                    original: popup.original.clone(),
+                                    corrected: popup.corrected.clone(),
+                                    status: status_str.to_string(),
+                                });
                         }
                         cfg.save(&self.data_dir);
                     }
                     self.push_feedback_log(format!(
                         "[CSC] correction action: ch={} blk={} off={} '{}' → '{}' status={}",
-                        popup.chapter, popup.block_idx, popup.char_offset,
-                        popup.original, popup.corrected, status_str,
+                        popup.chapter,
+                        popup.block_idx,
+                        popup.char_offset,
+                        popup.original,
+                        popup.corrected,
+                        status_str,
                     ));
                 }
 
@@ -1837,7 +1931,8 @@ impl ReaderApp {
                             p.just_opened = false;
                         } else if any_click {
                             let popup_rect = area_resp.response.rect;
-                            let over_popup = ui.ctx()
+                            let over_popup = ui
+                                .ctx()
                                 .pointer_interact_pos()
                                 .is_some_and(|pos| popup_rect.contains(pos));
                             if !over_popup {
@@ -1877,7 +1972,10 @@ impl ReaderApp {
         font_family_name: &str,
         i18n: &reader_core::i18n::I18n,
         clicked_link: &mut Option<String>,
-        highlight_ranges: &std::collections::HashMap<usize, Vec<(usize, usize, reader_core::library::HighlightColor)>>,
+        highlight_ranges: &std::collections::HashMap<
+            usize,
+            Vec<(usize, usize, reader_core::library::HighlightColor)>,
+        >,
     ) {
         egui::Frame::new()
             .inner_margin(egui::Margin {
@@ -1921,7 +2019,10 @@ impl ReaderApp {
                         };
                         for (i, block) in blocks[effective_start..block_end].iter().enumerate() {
                             let abs_idx = effective_start + i;
-                            let hl_ranges = highlight_ranges.get(&abs_idx).map(|v| v.as_slice()).unwrap_or(&[]);
+                            let hl_ranges = highlight_ranges
+                                .get(&abs_idx)
+                                .map(|v| v.as_slice())
+                                .unwrap_or(&[]);
                             render_block(
                                 ui,
                                 block,
@@ -2041,33 +2142,36 @@ fn render_block(
             let is_tts_block = TTS_HIGHLIGHT_BLOCK.get() == Some(chapter_block_idx);
             let galley = ui.painter().layout_job(job);
             let galley_size = galley.size();
-            let (rect, response) = ui.allocate_exact_size(galley_size, egui::Sense::click_and_drag());
-            
+            let (rect, response) =
+                ui.allocate_exact_size(galley_size, egui::Sense::click_and_drag());
+
             if is_tts_block {
                 paint_tts_highlight(ui, rect);
             }
-            ui.painter().galley(rect.min, galley.clone(), Color32::PLACEHOLDER);
+            ui.painter()
+                .galley(rect.min, galley.clone(), Color32::PLACEHOLDER);
 
             // Handle individual link clicks via pointer position matching
             if let Some(hover_pos) = ui.ctx().pointer_hover_pos() {
                 if rect.contains(hover_pos) {
-                    if let Some(cursor) = galley.cursor_from_pos(hover_pos - rect.min) {
-                        let mut cumulative = 0;
-                        let mut hovered_url = None;
-                        for span in spans {
-                            let span_len = span.text.chars().count();
-                            if cursor.ccursor.index >= cumulative && cursor.ccursor.index < cumulative + span_len {
-                                hovered_url = span.link_url.clone();
-                                break;
-                            }
-                            cumulative += span_len;
+                    let cursor = galley.cursor_from_pos(hover_pos - rect.min);
+                    let mut cumulative = 0;
+                    let mut hovered_url = None;
+                    for span in spans {
+                        let span_len = span.text.chars().count();
+                        if cursor.ccursor.index >= cumulative
+                            && cursor.ccursor.index < cumulative + span_len
+                        {
+                            hovered_url = span.link_url.clone();
+                            break;
                         }
-                        
-                        if let Some(url) = hovered_url {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                            if response.clicked() {
-                                *clicked_link = Some(url);
-                            }
+                        cumulative += span_len;
+                    }
+
+                    if let Some(url) = hovered_url {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        if response.clicked() {
+                            *clicked_link = Some(url);
                         }
                     }
                 }
@@ -2083,7 +2187,10 @@ fn render_block(
             //               2=Accepted, 3=Rejected
             let (display_spans, csc_annotations) = CSC_CORRECTIONS.with(|csc| {
                 let map = csc.borrow();
-                let empty_result = (spans.to_vec(), Vec::<(usize, String, String, f32, u8)>::new());
+                let empty_result = (
+                    spans.to_vec(),
+                    Vec::<(usize, String, String, f32, u8)>::new(),
+                );
                 let corrections = match map.get(&chapter_block_idx) {
                     Some(c) if !c.is_empty() => c,
                     _ => return empty_result,
@@ -2103,13 +2210,25 @@ fn render_block(
                                 // Pending + ReadWrite: show original text (underline later)
                                 (reader_core::epub::CorrectionStatus::Pending, true) => {
                                     new_text.push(ch);
-                                    annotations.push((abs, corr.corrected.clone(), corr.original.clone(), corr.confidence, 1));
+                                    annotations.push((
+                                        abs,
+                                        corr.corrected.clone(),
+                                        corr.original.clone(),
+                                        corr.confidence,
+                                        1,
+                                    ));
                                 }
                                 // Pending + ReadOnly: show corrected text, original gray above
                                 (reader_core::epub::CorrectionStatus::Pending, false) => {
                                     if corr.corrected.chars().count() == 1 {
                                         new_text.push_str(&corr.corrected);
-                                        annotations.push((abs, corr.original.clone(), corr.corrected.clone(), corr.confidence, 0));
+                                        annotations.push((
+                                            abs,
+                                            corr.original.clone(),
+                                            corr.corrected.clone(),
+                                            corr.confidence,
+                                            0,
+                                        ));
                                     } else {
                                         new_text.push(ch);
                                     }
@@ -2118,7 +2237,13 @@ fn render_block(
                                 (reader_core::epub::CorrectionStatus::Accepted, _) => {
                                     if corr.corrected.chars().count() == 1 {
                                         new_text.push_str(&corr.corrected);
-                                        annotations.push((abs, corr.original.clone(), corr.corrected.clone(), corr.confidence, 2));
+                                        annotations.push((
+                                            abs,
+                                            corr.original.clone(),
+                                            corr.corrected.clone(),
+                                            corr.confidence,
+                                            2,
+                                        ));
                                     } else {
                                         new_text.push(ch);
                                     }
@@ -2126,7 +2251,13 @@ fn render_block(
                                 // Rejected: show original text, corrected gray above
                                 (reader_core::epub::CorrectionStatus::Rejected, _) => {
                                     new_text.push(ch);
-                                    annotations.push((abs, corr.corrected.clone(), corr.original.clone(), corr.confidence, 3));
+                                    annotations.push((
+                                        abs,
+                                        corr.corrected.clone(),
+                                        corr.original.clone(),
+                                        corr.confidence,
+                                        3,
+                                    ));
                                 }
                                 // Ignored: show original, no annotation
                                 _ => {
@@ -2137,7 +2268,10 @@ fn render_block(
                             new_text.push(ch);
                         }
                     }
-                    modified.push(TextSpan { text: new_text, ..span.clone() });
+                    modified.push(TextSpan {
+                        text: new_text,
+                        ..span.clone()
+                    });
                     offset += chars.len();
                 }
                 (modified, annotations)
@@ -2158,12 +2292,14 @@ fn render_block(
             // Layout into Galley, allocate space, and paint manually
             let galley = ui.painter().layout_job(job);
             let galley_size = galley.size();
-            let (rect, response) = ui.allocate_exact_size(galley_size, egui::Sense::click_and_drag());
+            let (rect, response) =
+                ui.allocate_exact_size(galley_size, egui::Sense::click_and_drag());
             // TTS read-along highlight (paint behind text)
             if TTS_HIGHLIGHT_BLOCK.get() == Some(chapter_block_idx) {
                 paint_tts_highlight(ui, rect);
             }
-            ui.painter().galley(rect.min, galley.clone(), Color32::PLACEHOLDER);
+            ui.painter()
+                .galley(rect.min, galley.clone(), Color32::PLACEHOLDER);
 
             // ── Paint CSC annotations ──
             if !csc_annotations.is_empty() {
@@ -2171,7 +2307,9 @@ fn render_block(
                 let ruby_font = FontId::new(font_size * 0.45, FontFamily::Proportional);
                 let ruby_color = Color32::from_gray(140);
 
-                for &(char_offset, ref top_text, ref _main_text, confidence, tag) in &csc_annotations {
+                for &(char_offset, ref top_text, ref _main_text, confidence, tag) in
+                    &csc_annotations
+                {
                     if char_offset >= mapping.len() {
                         continue;
                     }
@@ -2183,7 +2321,8 @@ fn render_block(
 
                     let x = rect.min.x + pos_start.min.x;
                     // Use next cursor's min.x for character width; fallback to font_size
-                    let x2 = if pos_end.min.y == pos_start.min.y && pos_end.min.x > pos_start.min.x {
+                    let x2 = if pos_end.min.y == pos_start.min.y && pos_end.min.x > pos_start.min.x
+                    {
                         rect.min.x + pos_end.min.x
                     } else {
                         // Next char wrapped to new line — estimate width from font size
@@ -2260,29 +2399,31 @@ fn render_block(
 
             // Push into per-frame cache for the selection state machine
             BLOCK_GALLEYS.with(|bg| {
-                bg.borrow_mut().push((chapter_block_idx, galley.clone(), rect, text.clone()));
+                bg.borrow_mut()
+                    .push((chapter_block_idx, galley.clone(), rect, text.clone()));
             });
 
             // Handle individual link clicks via pointer position matching
             if let Some(hover_pos) = ui.ctx().pointer_hover_pos() {
                 if rect.contains(hover_pos) {
-                    if let Some(cursor) = galley.cursor_from_pos(hover_pos - rect.min) {
-                        let mut cumulative = 0;
-                        let mut hovered_url = None;
-                        for span in &display_spans {
-                            let span_len = span.text.chars().count();
-                            if cursor.ccursor.index >= cumulative && cursor.ccursor.index < cumulative + span_len {
-                                hovered_url = span.link_url.clone();
-                                break;
-                            }
-                            cumulative += span_len;
+                    let cursor = galley.cursor_from_pos(hover_pos - rect.min);
+                    let mut cumulative = 0;
+                    let mut hovered_url = None;
+                    for span in &display_spans {
+                        let span_len = span.text.chars().count();
+                        if cursor.ccursor.index >= cumulative
+                            && cursor.ccursor.index < cumulative + span_len
+                        {
+                            hovered_url = span.link_url.clone();
+                            break;
                         }
-                        
-                        if let Some(url) = hovered_url {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                            if response.clicked() {
-                                *clicked_link = Some(url);
-                            }
+                        cumulative += span_len;
+                    }
+
+                    if let Some(url) = hovered_url {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        if response.clicked() {
+                            *clicked_link = Some(url);
                         }
                     }
                 }
@@ -2347,10 +2488,22 @@ fn show_selection_toolbar(
                     }
                     // Highlight colour buttons (softer preview colours)
                     for (color, c32) in [
-                        (reader_core::library::HighlightColor::Yellow, Color32::from_rgb(255, 245, 140)),
-                        (reader_core::library::HighlightColor::Green, Color32::from_rgb(144, 238, 144)),
-                        (reader_core::library::HighlightColor::Blue, Color32::from_rgb(135, 206, 250)),
-                        (reader_core::library::HighlightColor::Pink, Color32::from_rgb(255, 182, 193)),
+                        (
+                            reader_core::library::HighlightColor::Yellow,
+                            Color32::from_rgb(255, 245, 140),
+                        ),
+                        (
+                            reader_core::library::HighlightColor::Green,
+                            Color32::from_rgb(144, 238, 144),
+                        ),
+                        (
+                            reader_core::library::HighlightColor::Blue,
+                            Color32::from_rgb(135, 206, 250),
+                        ),
+                        (
+                            reader_core::library::HighlightColor::Pink,
+                            Color32::from_rgb(255, 182, 193),
+                        ),
                     ] {
                         let btn = egui::Button::new(" ")
                             .fill(c32)
@@ -2360,10 +2513,10 @@ fn show_selection_toolbar(
                         }
                     }
                     // Delete highlight (only shown when block has existing highlight)
-                    if has_highlight
-                        && ui.small_button("x").on_hover_text("删除标注").clicked() {
-                            result = SelToolbarResult::DeleteHighlight;
-                        }
+                    if has_highlight && ui.small_button("x").on_hover_text("删除标注").clicked()
+                    {
+                        result = SelToolbarResult::DeleteHighlight;
+                    }
                     // Dictionary
                     if ui.small_button(i18n.t("context.dictionary")).clicked() {
                         let trimmed = text.chars().take(20).collect::<String>();
@@ -2421,7 +2574,11 @@ fn build_layout_job(
     // Helper: lookup highlight that covers a given char position
     let hl_at = |char_pos: usize| -> Option<&reader_core::library::HighlightColor> {
         highlight_ranges.iter().find_map(|(s, e, c)| {
-            if char_pos >= *s && char_pos < *e { Some(c) } else { None }
+            if char_pos >= *s && char_pos < *e {
+                Some(c)
+            } else {
+                None
+            }
         })
     };
 
@@ -2458,14 +2615,20 @@ fn build_layout_job(
         let span_char_len = span.text.chars().count();
         let span_start = char_offset;
         let span_end = char_offset + span_char_len;
-        let any_hl = highlight_ranges.iter().any(|(s, e, _)| *s < span_end && *e > span_start);
+        let any_hl = highlight_ranges
+            .iter()
+            .any(|(s, e, _)| *s < span_end && *e > span_start);
 
         if !any_hl || highlight_ranges.is_empty() {
             let format = TextFormat {
                 font_id: FontId::new(font_size, family),
                 color: normal_color,
                 italics: is_italic,
-                underline: if is_link { egui::Stroke::new(1.0, link_color) } else { egui::Stroke::NONE },
+                underline: if is_link {
+                    egui::Stroke::new(1.0, link_color)
+                } else {
+                    egui::Stroke::NONE
+                },
                 line_height: Some(font_size * line_spacing()),
                 ..Default::default()
             };
@@ -2497,7 +2660,11 @@ fn build_layout_job(
                         font_id: FontId::new(font_size, family.clone()),
                         color: fg,
                         italics: is_italic,
-                        underline: if is_link { egui::Stroke::new(1.0, link_color) } else { egui::Stroke::NONE },
+                        underline: if is_link {
+                            egui::Stroke::new(1.0, link_color)
+                        } else {
+                            egui::Stroke::NONE
+                        },
                         background: bg_c,
                         line_height: Some(font_size * line_spacing()),
                         ..Default::default()
@@ -2520,7 +2687,11 @@ fn build_layout_job(
                 font_id: FontId::new(font_size, family),
                 color: fg,
                 italics: is_italic,
-                underline: if is_link { egui::Stroke::new(1.0, link_color) } else { egui::Stroke::NONE },
+                underline: if is_link {
+                    egui::Stroke::new(1.0, link_color)
+                } else {
+                    egui::Stroke::NONE
+                },
                 background: bg_c,
                 line_height: Some(font_size * line_spacing()),
                 ..Default::default()
@@ -2569,7 +2740,10 @@ fn estimate_block_height(
                 .iter()
                 .map(|s| estimate_text_width(&s.text, font_size))
                 .sum();
-            ((text_len + font_size * text_indent()) / max_width).ceil().max(1.0) * line_height
+            ((text_len + font_size * text_indent()) / max_width)
+                .ceil()
+                .max(1.0)
+                * line_height
                 + font_size * para_spacing()
         }
         ContentBlock::Separator => 24.0,

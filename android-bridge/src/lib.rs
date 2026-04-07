@@ -1261,7 +1261,11 @@ pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_previewTxtChapters
         match env.get_string(&custom_regex) {
             Ok(s) => {
                 let s: String = s.into();
-                if s.is_empty() { None } else { Some(s) }
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
             }
             Err(_) => None,
         }
@@ -1320,7 +1324,11 @@ pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_convertTxtToEpub(
         match env.get_string(js) {
             Ok(s) => {
                 let s: String = s.into();
-                if s.is_empty() { None } else { Some(s) }
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
             }
             Err(_) => None,
         }
@@ -1669,7 +1677,11 @@ pub extern "C" fn Java_com_zhongbai233_epub_reader_RustBridge_collectCscSamples(
         None => return std::ptr::null_mut(),
     };
 
-    let accepted: Vec<_> = cfg.corrections.iter().filter(|r| r.status == "accepted").collect();
+    let accepted: Vec<_> = cfg
+        .corrections
+        .iter()
+        .filter(|r| r.status == "accepted")
+        .collect();
     if accepted.is_empty() {
         return std::ptr::null_mut();
     }

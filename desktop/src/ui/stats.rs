@@ -31,28 +31,21 @@ impl ReaderApp {
                         ui.label(self.i18n.t("stats.recent_sessions"));
                         ui.add_space(4.0);
 
-                        egui::Grid::new("stats_grid")
-                            .striped(true)
-                            .show(ui, |ui| {
-                                ui.label(
-                                    egui::RichText::new(self.i18n.t("stats.date")).strong(),
-                                );
-                                ui.label(
-                                    egui::RichText::new(self.i18n.t("stats.duration")).strong(),
-                                );
-                                ui.end_row();
+                        egui::Grid::new("stats_grid").striped(true).show(ui, |ui| {
+                            ui.label(egui::RichText::new(self.i18n.t("stats.date")).strong());
+                            ui.label(egui::RichText::new(self.i18n.t("stats.duration")).strong());
+                            ui.end_row();
 
-                                // Show last 20 sessions, newest first
-                                let sessions: Vec<_> =
-                                    stats.sessions.iter().rev().take(20).collect();
-                                for session in sessions {
-                                    ui.label(&session.date);
-                                    let m = session.seconds / 60;
-                                    let s = session.seconds % 60;
-                                    ui.label(format!("{m}m {s}s"));
-                                    ui.end_row();
-                                }
-                            });
+                            // Show last 20 sessions, newest first
+                            let sessions: Vec<_> = stats.sessions.iter().rev().take(20).collect();
+                            for session in sessions {
+                                ui.label(&session.date);
+                                let m = session.seconds / 60;
+                                let s = session.seconds % 60;
+                                ui.label(format!("{m}m {s}s"));
+                                ui.end_row();
+                            }
+                        });
                     }
                 } else {
                     ui.label(self.i18n.t("stats.no_data"));

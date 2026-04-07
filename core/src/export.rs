@@ -17,8 +17,7 @@ pub fn export_book(
 ) -> Result<(), String> {
     match mode {
         ExportMode::Original => {
-            std::fs::copy(source_epub, output_path)
-                .map_err(|e| format!("复制文件失败: {e}"))?;
+            std::fs::copy(source_epub, output_path).map_err(|e| format!("复制文件失败: {e}"))?;
             Ok(())
         }
         _ => {
@@ -36,11 +35,9 @@ fn build_modified_epub(
 ) -> Result<(), String> {
     use epub_builder::{EpubBuilder, EpubContent, ZipLibrary};
 
-    let file =
-        std::fs::File::create(output_path).map_err(|e| format!("创建文件失败: {e}"))?;
-    let mut builder =
-        EpubBuilder::new(ZipLibrary::new().map_err(|e| format!("{e}"))?)
-            .map_err(|e| format!("{e}"))?;
+    let file = std::fs::File::create(output_path).map_err(|e| format!("创建文件失败: {e}"))?;
+    let mut builder = EpubBuilder::new(ZipLibrary::new().map_err(|e| format!("{e}"))?)
+        .map_err(|e| format!("{e}"))?;
 
     builder
         .metadata("title", &config.title)
@@ -58,9 +55,7 @@ fn build_modified_epub(
         let xhtml = build_chapter_xhtml(chapter, ch_idx, config, mode);
         let filename = format!("chapter_{ch_idx:04}.xhtml");
         let content = EpubContent::new(&filename, xhtml.as_bytes()).title(&chapter.title);
-        builder
-            .add_content(content)
-            .map_err(|e| format!("{e}"))?;
+        builder.add_content(content).map_err(|e| format!("{e}"))?;
     }
 
     builder

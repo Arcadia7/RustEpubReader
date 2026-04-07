@@ -20,7 +20,10 @@ impl ReaderApp {
                 ui.add_space(8.0);
 
                 let modes = [
-                    (ExportMode::Original, self.i18n.t("export.mode_original").to_string()),
+                    (
+                        ExportMode::Original,
+                        self.i18n.t("export.mode_original").to_string(),
+                    ),
                     (
                         ExportMode::WithCorrections,
                         self.i18n.t("export.mode_corrections").to_string(),
@@ -29,7 +32,10 @@ impl ReaderApp {
                         ExportMode::WithAnnotations,
                         self.i18n.t("export.mode_annotations").to_string(),
                     ),
-                    (ExportMode::Full, self.i18n.t("export.mode_full").to_string()),
+                    (
+                        ExportMode::Full,
+                        self.i18n.t("export.mode_full").to_string(),
+                    ),
                 ];
 
                 for (mode, label) in &modes {

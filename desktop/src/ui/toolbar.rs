@@ -117,10 +117,16 @@ impl ReaderApp {
 
                 // Bookmark current chapter
                 let ch_bookmarked = self.book_config.as_ref().is_some_and(|cfg| {
-                    cfg.bookmarks.iter().any(|b| b.chapter == self.current_chapter)
+                    cfg.bookmarks
+                        .iter()
+                        .any(|b| b.chapter == self.current_chapter)
                 });
                 let bm_icon = if ch_bookmarked { "★" } else { "☆" };
-                let bm_tip = if ch_bookmarked { "取消书签" } else { "添加章节书签" };
+                let bm_tip = if ch_bookmarked {
+                    "取消书签"
+                } else {
+                    "添加章节书签"
+                };
                 if toggle_btn(ui, ch_bookmarked, bm_icon, btn_size)
                     .on_hover_text(bm_tip)
                     .clicked()

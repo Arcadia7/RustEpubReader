@@ -7,7 +7,9 @@ use std::sync::OnceLock;
 
 fn re_html_tags() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"(?i)</?(?:br|p|div|span|a|b|i|em|strong|ul|ol|li|h[1-6])[^>]*>").unwrap())
+    R.get_or_init(|| {
+        Regex::new(r"(?i)</?(?:br|p|div|span|a|b|i|em|strong|ul|ol|li|h[1-6])[^>]*>").unwrap()
+    })
 }
 
 fn re_html_entities() -> &'static Regex {
@@ -80,7 +82,8 @@ fn decode_html_entities(s: &str) -> String {
                 "&quot;" => "\"".to_string(),
                 other => {
                     // 数字实体: &#123; 或 &#x1A;
-                    if let Some(num_str) = other.strip_prefix("&#x").and_then(|s| s.strip_suffix(';'))
+                    if let Some(num_str) =
+                        other.strip_prefix("&#x").and_then(|s| s.strip_suffix(';'))
                     {
                         u32::from_str_radix(num_str, 16)
                             .ok()

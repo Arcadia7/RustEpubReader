@@ -80,10 +80,15 @@ impl ReaderApp {
                         }
 
                         // Group by chapter
-                        let mut by_chapter: std::collections::BTreeMap<usize, Vec<(usize, reader_core::library::Highlight)>> =
-                            std::collections::BTreeMap::new();
+                        let mut by_chapter: std::collections::BTreeMap<
+                            usize,
+                            Vec<(usize, reader_core::library::Highlight)>,
+                        > = std::collections::BTreeMap::new();
                         for (idx, hl) in highlights.iter().enumerate() {
-                            by_chapter.entry(hl.chapter).or_default().push((idx, hl.clone()));
+                            by_chapter
+                                .entry(hl.chapter)
+                                .or_default()
+                                .push((idx, hl.clone()));
                         }
 
                         let mut to_remove: Option<usize> = None;
@@ -107,10 +112,15 @@ impl ReaderApp {
                                         .and_then(|ch| ch.blocks.get(hl.start_block))
                                         .map(|block| {
                                             let full: String = match block {
-                                                reader_core::epub::ContentBlock::Paragraph { spans } => {
+                                                reader_core::epub::ContentBlock::Paragraph {
+                                                    spans,
+                                                } => {
                                                     spans.iter().map(|s| s.text.as_str()).collect()
                                                 }
-                                                reader_core::epub::ContentBlock::Heading { spans, .. } => {
+                                                reader_core::epub::ContentBlock::Heading {
+                                                    spans,
+                                                    ..
+                                                } => {
                                                     spans.iter().map(|s| s.text.as_str()).collect()
                                                 }
                                                 _ => String::new(),
@@ -150,14 +160,12 @@ impl ReaderApp {
                                     });
 
                                     // Note display / edit
-                                    let existing_note = self
-                                        .book_config
-                                        .as_ref()
-                                        .and_then(|c| {
-                                            c.notes.iter().find(|n| n.highlight_id == hl.id).cloned()
-                                        });
+                                    let existing_note = self.book_config.as_ref().and_then(|c| {
+                                        c.notes.iter().find(|n| n.highlight_id == hl.id).cloned()
+                                    });
 
-                                    let is_editing = self.editing_note_id.as_deref() == Some(&hl.id);
+                                    let is_editing =
+                                        self.editing_note_id.as_deref() == Some(&hl.id);
 
                                     ui.indent(format!("note_{}", hl.id), |ui| {
                                         if is_editing {
@@ -166,16 +174,31 @@ impl ReaderApp {
                                                 if ui.small_button("✓").clicked() {
                                                     let buf = self.editing_note_buf.clone();
                                                     if let Some(cfg) = &mut self.book_config {
-                                                        if let Some(note) = cfg.notes.iter_mut().find(|n| n.highlight_id == hl.id) {
+                                                        if let Some(note) = cfg
+                                                            .notes
+                                                            .iter_mut()
+                                                            .find(|n| n.highlight_id == hl.id)
+                                                        {
                                                             note.content = buf;
-                                                            note.updated_at = reader_core::now_secs();
-                                                        } else if !self.editing_note_buf.trim().is_empty() {
-                                                            cfg.notes.push(reader_core::library::Note {
-                                                                highlight_id: hl.id.clone(),
-                                                                content: self.editing_note_buf.clone(),
-                                                                created_at: reader_core::now_secs(),
-                                                                updated_at: reader_core::now_secs(),
-                                                            });
+                                                            note.updated_at =
+                                                                reader_core::now_secs();
+                                                        } else if !self
+                                                            .editing_note_buf
+                                                            .trim()
+                                                            .is_empty()
+                                                        {
+                                                            cfg.notes.push(
+                                                                reader_core::library::Note {
+                                                                    highlight_id: hl.id.clone(),
+                                                                    content: self
+                                                                        .editing_note_buf
+                                                                        .clone(),
+                                                                    created_at:
+                                                                        reader_core::now_secs(),
+                                                                    updated_at:
+                                                                        reader_core::now_secs(),
+                                                                },
+                                                            );
                                                         }
                                                         cfg.save(&self.data_dir);
                                                     }
@@ -282,7 +305,9 @@ impl ReaderApp {
                                         );
                                         if ui
                                             .small_button("↩")
-                                            .on_hover_text(self.i18n.t("annotations.revert_correction"))
+                                            .on_hover_text(
+                                                self.i18n.t("annotations.revert_correction"),
+                                            )
                                             .clicked()
                                         {
                                             to_revert =
@@ -298,19 +323,14 @@ impl ReaderApp {
                             // Remove from config
                             if let Some(cfg) = &mut self.book_config {
                                 cfg.corrections.retain(|r| {
-                                    !(r.chapter == ch
-                                        && r.block_idx == blk
-                                        && r.char_offset == off)
+                                    !(r.chapter == ch && r.block_idx == blk && r.char_offset == off)
                                 });
                                 cfg.save(&self.data_dir);
                             }
                             // Reset in csc_cache to Pending
                             if let Some(corrs) = self.csc_cache.get_mut(&(ch, blk)) {
-                                if let Some(c) =
-                                    corrs.iter_mut().find(|c| c.char_offset == off)
-                                {
-                                    c.status =
-                                        reader_core::epub::CorrectionStatus::Pending;
+                                if let Some(c) = corrs.iter_mut().find(|c| c.char_offset == off) {
+                                    c.status = reader_core::epub::CorrectionStatus::Pending;
                                 }
                             }
                         }

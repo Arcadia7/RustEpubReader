@@ -32,7 +32,9 @@ impl ReaderApp {
                     for entry in &toc {
                         let is_current = entry.chapter_index == self.current_chapter;
                         let ch_bookmarked = self.book_config.as_ref().is_some_and(|cfg| {
-                            cfg.bookmarks.iter().any(|b| b.chapter == entry.chapter_index)
+                            cfg.bookmarks
+                                .iter()
+                                .any(|b| b.chapter == entry.chapter_index)
                         });
 
                         ui.horizontal(|ui| {
@@ -71,10 +73,17 @@ impl ReaderApp {
                             };
                             let chapter_idx = entry.chapter_index;
                             if ui
-                                .add(egui::Button::new(
-                                    egui::RichText::new(bm_icon).size(14.0).color(bm_color),
-                                ).frame(false))
-                                .on_hover_text(if ch_bookmarked { "取消书签" } else { "添加书签" })
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new(bm_icon).size(14.0).color(bm_color),
+                                    )
+                                    .frame(false),
+                                )
+                                .on_hover_text(if ch_bookmarked {
+                                    "取消书签"
+                                } else {
+                                    "添加书签"
+                                })
                                 .clicked()
                             {
                                 if let Some(cfg) = &mut self.book_config {

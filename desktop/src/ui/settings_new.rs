@@ -301,8 +301,7 @@ impl ReaderApp {
             ui.label(self.i18n.t("settings.animation_speed"));
             ui.add_sized(
                 [ui.available_width().min(250.0), 18.0],
-                egui::Slider::new(&mut self.reader_page_animation_speed, 0.04..=0.40)
-                    .step_by(0.02),
+                egui::Slider::new(&mut self.reader_page_animation_speed, 0.04..=0.40).step_by(0.02),
             );
         }
     }

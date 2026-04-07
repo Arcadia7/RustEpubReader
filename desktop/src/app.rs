@@ -444,9 +444,19 @@ impl TextSelection {
         if self.start_block < self.end_block
             || (self.start_block == self.end_block && self.start_char <= self.end_char)
         {
-            (self.start_block, self.start_char, self.end_block, self.end_char)
+            (
+                self.start_block,
+                self.start_char,
+                self.end_block,
+                self.end_char,
+            )
         } else {
-            (self.end_block, self.end_char, self.start_block, self.start_char)
+            (
+                self.end_block,
+                self.end_char,
+                self.start_block,
+                self.start_char,
+            )
         }
     }
 }
@@ -578,8 +588,8 @@ pub struct ReaderApp {
     pub tts_playing: bool,
     pub tts_paused: bool,
     pub tts_voice_name: String,
-    pub tts_rate: i32,         // e.g. 0, -20, +50 (percent)
-    pub tts_volume: i32,       // e.g. 0, -50, +50 (percent)
+    pub tts_rate: i32,   // e.g. 0, -20, +50 (percent)
+    pub tts_volume: i32, // e.g. 0, -50, +50 (percent)
     pub tts_current_block: usize,
     pub tts_stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub tts_audio_sink: Option<std::sync::Arc<rodio::Sink>>,
@@ -604,7 +614,8 @@ pub struct ReaderApp {
     pub csc_download_progress: std::sync::Arc<std::sync::Mutex<f32>>,
     pub csc_engine: std::sync::Arc<std::sync::Mutex<Option<reader_core::csc::CscEngine>>>,
     /// Cached correction results: (chapter, block_idx) → Vec<CorrectionInfo>
-    pub csc_cache: std::collections::HashMap<(usize, usize), Vec<reader_core::epub::CorrectionInfo>>,
+    pub csc_cache:
+        std::collections::HashMap<(usize, usize), Vec<reader_core::epub::CorrectionInfo>>,
     /// Channel to send work to the CSC background worker thread.
     pub csc_work_tx: Option<std::sync::mpsc::Sender<CscWork>>,
     /// Channel to receive results from the CSC background worker thread.
@@ -626,8 +637,10 @@ pub struct ReaderApp {
     pub show_github_login: bool,
     pub github_oauth_status: String,
     // GitHub OAuth Device Flow async channels
-    pub github_pending_device_code: Option<std::sync::mpsc::Receiver<Result<(String, String, u64, u64), String>>>,
-    pub github_pending_token_poll: Option<std::sync::mpsc::Receiver<Result<crate::ui::github_oauth::PollResult, String>>>,
+    pub github_pending_device_code:
+        Option<std::sync::mpsc::Receiver<Result<(String, String, u64, u64), String>>>,
+    pub github_pending_token_poll:
+        Option<std::sync::mpsc::Receiver<Result<crate::ui::github_oauth::PollResult, String>>>,
     pub github_last_poll: Option<std::time::Instant>,
     // ── CSC Contribution ──
     pub show_csc_contribute_dialog: bool,
@@ -636,7 +649,8 @@ pub struct ReaderApp {
     pub csc_contribute_in_progress: bool,
     pub csc_contribute_status: String,
     pub csc_contribute_pr_url: Option<String>,
-    pub csc_contribute_rx: Option<std::sync::mpsc::Receiver<crate::ui::csc_contribute::ContributeResult>>,
+    pub csc_contribute_rx:
+        Option<std::sync::mpsc::Receiver<crate::ui::csc_contribute::ContributeResult>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -896,7 +910,10 @@ impl Default for ReaderApp {
             // Restore github token
             if app.github_username.is_some() {
                 let has_token = app.github_token.is_some();
-                app.push_feedback_log(format!("[Init] github_username={:?}, token_restored={}", app.github_username, has_token));
+                app.push_feedback_log(format!(
+                    "[Init] github_username={:?}, token_restored={}",
+                    app.github_username, has_token
+                ));
             }
             // 自动恢复上次阅读的书籍
             if let Some(ref path) = settings.last_book_path.clone() {
@@ -923,7 +940,10 @@ impl Default for ReaderApp {
             app.push_feedback_log("[Init] auto-starting sharing server");
             app.start_sharing_server();
         }
-        app.push_feedback_log(format!("[Init] app initialized (data_dir={})", app.data_dir));
+        app.push_feedback_log(format!(
+            "[Init] app initialized (data_dir={})",
+            app.data_dir
+        ));
         app.last_saved_settings = Some(AppSettings::from_app(&app));
 
         // ── 启动时检查更新 ──
@@ -1026,10 +1046,18 @@ impl ReaderApp {
     }
 
     pub fn open_book_from_path(&mut self, path: &str, chapter: Option<usize>) {
-        self.push_feedback_log(format!("[Book] open_book_from_path: path={}, chapter={:?}", path, chapter));
+        self.push_feedback_log(format!(
+            "[Book] open_book_from_path: path={}, chapter={:?}",
+            path, chapter
+        ));
         match EpubBook::open(path) {
             Ok(mut book) => {
-                self.push_feedback_log(format!("[Book] opened: title={}, chapters={}, fonts={}", book.title, book.chapters.len(), book.fonts.len()));
+                self.push_feedback_log(format!(
+                    "[Book] opened: title={}, chapters={}, fonts={}",
+                    book.title,
+                    book.chapters.len(),
+                    book.fonts.len()
+                ));
                 let mut ch = chapter.unwrap_or(0);
                 if !book.chapters.is_empty() {
                     ch = ch.min(book.chapters.len() - 1);
@@ -1080,7 +1108,13 @@ impl ReaderApp {
                 self.book_config =
                     reader_core::library::Library::read_book_config(&self.data_dir, &entry.id);
                 self.reading_session_start = Some(reader_core::now_secs());
-                self.push_feedback_log(format!("[Book] ready: chapter={}/{}, embedded_fonts={}, path={}", ch, self.total_chapters(), self.embedded_font_names.len(), entry.path));
+                self.push_feedback_log(format!(
+                    "[Book] ready: chapter={}/{}, embedded_fonts={}, path={}",
+                    ch,
+                    self.total_chapters(),
+                    self.embedded_font_names.len(),
+                    entry.path
+                ));
                 // Trigger CSC correction for current + adjacent chapters
                 self.csc_cache.clear();
                 self.csc_trigger_chapter(ch);
@@ -1189,10 +1223,16 @@ impl ReaderApp {
                 }
                 let elapsed = start.elapsed().as_secs_f32();
                 let total: usize = corrections.iter().map(|(_, c)| c.len()).sum();
-                dbg_log(&logs, format!(
-                    "[CSC] chapter {} done: {:.1}s, {} corrections in {} blocks",
-                    work.chapter, elapsed, total, corrections.len(),
-                ));
+                dbg_log(
+                    &logs,
+                    format!(
+                        "[CSC] chapter {} done: {:.1}s, {} corrections in {} blocks",
+                        work.chapter,
+                        elapsed,
+                        total,
+                        corrections.len(),
+                    ),
+                );
                 let _ = result_tx.send(CscResult {
                     chapter: work.chapter,
                     corrections,
@@ -1238,8 +1278,7 @@ impl ReaderApp {
                             ContentBlock::Heading { spans, .. } => spans,
                             _ => return None,
                         };
-                        let text: String =
-                            spans.iter().map(|s| s.text.as_str()).collect();
+                        let text: String = spans.iter().map(|s| s.text.as_str()).collect();
                         if text.trim().is_empty() {
                             None
                         } else {
@@ -1589,7 +1628,10 @@ impl eframe::App for ReaderApp {
                     if let Some(ref state) = *s {
                         match state {
                             UpdateState::Available(tag) => {
-                                self.push_feedback_log(format!("[Update] new version available: {}", tag));
+                                self.push_feedback_log(format!(
+                                    "[Update] new version available: {}",
+                                    tag
+                                ));
                                 self.update_latest_tag = Some(tag.clone());
                                 self.show_update_dialog = true;
                                 self.update_state = UpdateState::Available(tag.clone());

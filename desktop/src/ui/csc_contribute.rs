@@ -147,24 +147,21 @@ impl ReaderApp {
         let token = match &self.github_token {
             Some(t) => t.clone(),
             None => {
-                self.csc_contribute_status =
-                    self.i18n.t("csc.contribute_need_login").to_string();
+                self.csc_contribute_status = self.i18n.t("csc.contribute_need_login").to_string();
                 return;
             }
         };
         let username = match &self.github_username {
             Some(u) => u.clone(),
             None => {
-                self.csc_contribute_status =
-                    self.i18n.t("csc.contribute_need_login").to_string();
+                self.csc_contribute_status = self.i18n.t("csc.contribute_need_login").to_string();
                 return;
             }
         };
 
         let samples = self.csc_collect_samples();
         if samples.is_empty() {
-            self.csc_contribute_status =
-                self.i18n.t("csc.contribute_no_data").to_string();
+            self.csc_contribute_status = self.i18n.t("csc.contribute_no_data").to_string();
             return;
         }
 
@@ -209,14 +206,12 @@ impl ReaderApp {
             match result {
                 ContributeResult::Success { pr_url } => {
                     self.push_feedback_log(format!("[CSC-Contribute] PR created: {}", pr_url));
-                    self.csc_contribute_status =
-                        self.i18n.tf1("csc.contribute_success", &pr_url);
+                    self.csc_contribute_status = self.i18n.tf1("csc.contribute_success", &pr_url);
                     self.csc_contribute_pr_url = Some(pr_url);
                 }
                 ContributeResult::Error(e) => {
                     self.push_feedback_log(format!("[CSC-Contribute] error: {}", e));
-                    self.csc_contribute_status =
-                        self.i18n.tf1("csc.contribute_error", &e);
+                    self.csc_contribute_status = self.i18n.tf1("csc.contribute_error", &e);
                 }
             }
         }
@@ -246,10 +241,8 @@ impl ReaderApp {
                     let samples = self.csc_collect_samples();
                     ui.label(
                         egui::RichText::new(
-                            self.i18n.tf1(
-                                "csc.contribute_sample_count",
-                                &samples.len().to_string(),
-                            ),
+                            self.i18n
+                                .tf1("csc.contribute_sample_count", &samples.len().to_string()),
                         )
                         .strong(),
                     );
@@ -301,19 +294,16 @@ impl ReaderApp {
                     } else {
                         ui.horizontal(|ui| {
                             ui.label("✓");
-                            ui.label(
-                                self.i18n.tf1(
-                                    "csc.contribute_logged_in",
-                                    self.github_username.as_deref().unwrap_or("?"),
-                                ),
-                            );
+                            ui.label(self.i18n.tf1(
+                                "csc.contribute_logged_in",
+                                self.github_username.as_deref().unwrap_or("?"),
+                            ));
                         });
                     }
 
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        let can_submit =
-                            self.github_token.is_some() && !samples.is_empty();
+                        let can_submit = self.github_token.is_some() && !samples.is_empty();
                         if ui
                             .add_enabled(
                                 can_submit,
@@ -461,7 +451,10 @@ fn csc_contribute_worker(
             let body = r.text().unwrap_or_default();
             crate::app::dbg_log(
                 logs,
-                format!("[CSC-Contribute] get fork info failed: HTTP {} {}", status, body),
+                format!(
+                    "[CSC-Contribute] get fork info failed: HTTP {} {}",
+                    status, body
+                ),
             );
             return ContributeResult::Error(format!("Cannot access fork: HTTP {}", status));
         }
@@ -557,11 +550,10 @@ fn csc_contribute_worker(
                                 .send();
 
                             match update_resp {
-                                Ok(ur) if ur.status().is_success() || ur.status().as_u16() == 200 => {
-                                    crate::app::dbg_log(
-                                        logs,
-                                        "[CSC-Contribute] file updated OK",
-                                    );
+                                Ok(ur)
+                                    if ur.status().is_success() || ur.status().as_u16() == 200 =>
+                                {
+                                    crate::app::dbg_log(logs, "[CSC-Contribute] file updated OK");
                                 }
                                 Ok(ur) => {
                                     let s = ur.status();
@@ -582,10 +574,7 @@ fn csc_contribute_worker(
                     }
                 }
             } else {
-                return ContributeResult::Error(format!(
-                    "Create file failed: HTTP {}",
-                    status
-                ));
+                return ContributeResult::Error(format!("Create file failed: HTTP {}", status));
             }
         }
         Err(e) => {
@@ -624,21 +613,12 @@ fn csc_contribute_worker(
             let status = r.status();
             let body: serde_json::Value = r.json().unwrap_or_default();
             if status.is_success() || status.as_u16() == 201 {
-                let pr_url = body["html_url"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
-                crate::app::dbg_log(
-                    logs,
-                    format!("[CSC-Contribute] PR created: {}", pr_url),
-                );
+                let pr_url = body["html_url"].as_str().unwrap_or("").to_string();
+                crate::app::dbg_log(logs, format!("[CSC-Contribute] PR created: {}", pr_url));
                 ContributeResult::Success { pr_url }
             } else if status.as_u16() == 422 {
                 // PR already exists — try to find it
-                crate::app::dbg_log(
-                    logs,
-                    "[CSC-Contribute] PR may already exist, searching...",
-                );
+                crate::app::dbg_log(logs, "[CSC-Contribute] PR may already exist, searching...");
                 let search_resp = client
                     .get(format!(
                         "https://api.github.com/repos/{}/{}/pulls?head={}:{}&state=open",

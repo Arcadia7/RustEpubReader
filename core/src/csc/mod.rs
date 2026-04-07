@@ -44,7 +44,9 @@ impl CscThreshold {
 pub enum ModelStatus {
     #[default]
     NotDownloaded,
-    Downloading { progress: f32 },
+    Downloading {
+        progress: f32,
+    },
     Downloaded,
     Loading,
     Ready,
@@ -187,15 +189,12 @@ impl CscEngine {
         let seq_len = tokenizer::MAX_SEQ_LEN;
 
         // Build input tensors
-        let input_ids_val = ort::value::Tensor::from_array(
-            ([1usize, seq_len], encoded.input_ids.clone()),
-        )?;
-        let attention_mask_val = ort::value::Tensor::from_array(
-            ([1usize, seq_len], encoded.attention_mask.clone()),
-        )?;
-        let token_type_ids_val = ort::value::Tensor::from_array(
-            ([1usize, seq_len], encoded.token_type_ids.clone()),
-        )?;
+        let input_ids_val =
+            ort::value::Tensor::from_array(([1usize, seq_len], encoded.input_ids.clone()))?;
+        let attention_mask_val =
+            ort::value::Tensor::from_array(([1usize, seq_len], encoded.attention_mask.clone()))?;
+        let token_type_ids_val =
+            ort::value::Tensor::from_array(([1usize, seq_len], encoded.token_type_ids.clone()))?;
 
         let session = self.session.as_mut().ok_or("session not loaded")?;
         let outputs = session.run(ort::inputs![
@@ -242,7 +241,10 @@ impl CscEngine {
             }
 
             // Compute softmax for both predicted and original tokens
-            let max_logit = logit_slice.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let max_logit = logit_slice
+                .iter()
+                .cloned()
+                .fold(f32::NEG_INFINITY, f32::max);
             let exp_sum: f32 = logit_slice.iter().map(|&x| (x - max_logit).exp()).sum();
             let p_predicted = (logit_slice[predicted_id] - max_logit).exp() / exp_sum;
             let p_original = (logit_slice[input_id as usize] - max_logit).exp() / exp_sum;
@@ -278,8 +280,7 @@ impl CscEngine {
                     continue;
                 }
 
-                let corrected_char =
-                    tok.id_to_token(predicted_id as u32).unwrap_or_default();
+                let corrected_char = tok.id_to_token(predicted_id as u32).unwrap_or_default();
 
                 // Skip if predicted token is [UNK]
                 if corrected_char == "[UNK]" {
@@ -367,22 +368,15 @@ fn is_cjk_char(ch: char) -> bool {
 fn is_protected_char(s: &str) -> bool {
     const PROTECTED: &[&str] = &[
         // Modal particles (语气助词)
-        "吗", "吧", "呢", "啊", "呀", "哇", "哦", "嗯", "喔", "噢",
-        "啦", "嘛", "咯", "喽", "嘞", "罢", "咧",
+        "吗", "吧", "呢", "啊", "呀", "哇", "哦", "嗯", "喔", "噢", "啦", "嘛", "咯", "喽", "嘞",
+        "罢", "咧",
         // Structural particles (结构助词) — already in confused_pair but protect originals too
-        "的", "得", "地",
-        // Aspect particles
-        "了", "过", "着",
-        // Common function words easily confused by BERT
-        "么", "个", "们", "这", "那", "就", "都", "也", "又", "才",
-        "把", "被", "让", "给", "向", "往", "从", "到", "为",
-        "而", "且", "或", "与", "及",
-        // Pronouns
-        "我", "你", "他", "她", "它", "谁", "啥",
-        // Demonstratives & measure words
+        "的", "得", "地", // Aspect particles
+        "了", "过", "着", // Common function words easily confused by BERT
+        "么", "个", "们", "这", "那", "就", "都", "也", "又", "才", "把", "被", "让", "给", "向",
+        "往", "从", "到", "为", "而", "且", "或", "与", "及", // Pronouns
+        "我", "你", "他", "她", "它", "谁", "啥", // Demonstratives & measure words
         "这", "那", "哪", "几", "多", "些",
     ];
     PROTECTED.contains(&s.trim())
 }
-
-

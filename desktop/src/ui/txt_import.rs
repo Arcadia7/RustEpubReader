@@ -70,7 +70,10 @@ impl ReaderApp {
                 let mut need_refresh = false;
                 ui.horizontal(|ui| {
                     if ui
-                        .radio(!state.use_heuristic && state.custom_regex.is_empty(), self.i18n.t("txt.mode_auto"))
+                        .radio(
+                            !state.use_heuristic && state.custom_regex.is_empty(),
+                            self.i18n.t("txt.mode_auto"),
+                        )
                         .clicked()
                     {
                         state.use_heuristic = false;
@@ -106,9 +109,8 @@ impl ReaderApp {
                             Some(state.custom_regex.clone())
                         },
                     };
-                    state.previews =
-                        reader_core::txt::preview_chapters(&state.txt_path, &config)
-                            .unwrap_or_default();
+                    state.previews = reader_core::txt::preview_chapters(&state.txt_path, &config)
+                        .unwrap_or_default();
                 }
 
                 ui.add_space(8.0);
@@ -143,11 +145,8 @@ impl ReaderApp {
                                         egui::Layout::right_to_left(egui::Align::Center),
                                         |ui| {
                                             ui.label(
-                                                egui::RichText::new(format!(
-                                                    "{}字",
-                                                    ch.char_count
-                                                ))
-                                                .weak(),
+                                                egui::RichText::new(format!("{}字", ch.char_count))
+                                                    .weak(),
                                             );
                                         },
                                     );
@@ -181,8 +180,7 @@ impl ReaderApp {
                         state.error = None;
 
                         let txt_path = state.txt_path.clone();
-                        let output_dir =
-                            std::path::PathBuf::from(&self.data_dir).join("books");
+                        let output_dir = std::path::PathBuf::from(&self.data_dir).join("books");
                         let _ = std::fs::create_dir_all(&output_dir);
 
                         let options = ConvertOptions {
@@ -206,13 +204,12 @@ impl ReaderApp {
                         state.result_slot = Some(slot);
 
                         std::thread::spawn(move || {
-                            let result =
-                                reader_core::txt::convert_txt_to_epub(
-                                    &txt_path,
-                                    &output_dir,
-                                    &options,
-                                )
-                                .map_err(|e| e.to_string());
+                            let result = reader_core::txt::convert_txt_to_epub(
+                                &txt_path,
+                                &output_dir,
+                                &options,
+                            )
+                            .map_err(|e| e.to_string());
                             if let Ok(mut s) = slot_clone.lock() {
                                 *s = Some(result);
                             }

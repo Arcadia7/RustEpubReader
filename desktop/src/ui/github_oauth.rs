@@ -30,23 +30,29 @@ impl ReaderApp {
                 let resp = client
                     .post("https://github.com/login/device/code")
                     .header("Accept", "application/json")
-                    .form(&[
-                        ("client_id", GITHUB_CLIENT_ID),
-                        ("scope", "public_repo"),
-                    ])
+                    .form(&[("client_id", GITHUB_CLIENT_ID), ("scope", "public_repo")])
                     .send()
                     .map_err(|e| {
-                        crate::app::dbg_log(&logs, format!("[GitHub] device_code request failed: {}", e));
+                        crate::app::dbg_log(
+                            &logs,
+                            format!("[GitHub] device_code request failed: {}", e),
+                        );
                         e.to_string()
                     })?;
 
                 let status = resp.status();
-                crate::app::dbg_log(&logs, format!("[GitHub] device_code response HTTP {}", status));
+                crate::app::dbg_log(
+                    &logs,
+                    format!("[GitHub] device_code response HTTP {}", status),
+                );
                 let body: serde_json::Value = resp.json().map_err(|e| e.to_string())?;
                 let device_code = body["device_code"]
                     .as_str()
                     .ok_or_else(|| {
-                        crate::app::dbg_log(&logs, format!("[GitHub] missing device_code in response: {}", body));
+                        crate::app::dbg_log(
+                            &logs,
+                            format!("[GitHub] missing device_code in response: {}", body),
+                        );
                         "missing device_code".to_string()
                     })?
                     .to_string();
@@ -57,7 +63,13 @@ impl ReaderApp {
                 let expires_in = body["expires_in"].as_u64().unwrap_or(900);
                 let interval = body["interval"].as_u64().unwrap_or(5);
 
-                crate::app::dbg_log(&logs, format!("[GitHub] got user_code={}, expires_in={}s, interval={}s", user_code, expires_in, interval));
+                crate::app::dbg_log(
+                    &logs,
+                    format!(
+                        "[GitHub] got user_code={}, expires_in={}s, interval={}s",
+                        user_code, expires_in, interval
+                    ),
+                );
                 Ok((device_code, user_code, expires_in, interval))
             })();
 
@@ -81,12 +93,16 @@ impl ReaderApp {
             self.github_pending_device_code = None;
             match result {
                 Ok((device_code, user_code, expires_in, interval)) => {
-                    self.push_feedback_log(format!("[GitHub] device_code received, user_code={}, expires={}s", user_code, expires_in));
+                    self.push_feedback_log(format!(
+                        "[GitHub] device_code received, user_code={}, expires={}s",
+                        user_code, expires_in
+                    ));
                     self.github_device_code = Some(device_code);
                     self.github_user_code = Some(user_code);
                     self.github_oauth_interval = interval;
-                    self.github_oauth_expires_at =
-                        Some(std::time::Instant::now() + std::time::Duration::from_secs(expires_in));
+                    self.github_oauth_expires_at = Some(
+                        std::time::Instant::now() + std::time::Duration::from_secs(expires_in),
+                    );
                     self.github_oauth_polling = true;
                     self.github_oauth_status.clear();
                     self.github_last_poll = None;
@@ -156,19 +172,28 @@ impl ReaderApp {
                 let body: serde_json::Value = resp.json().map_err(|e| e.to_string())?;
 
                 if let Some(token) = body["access_token"].as_str() {
-                    crate::app::dbg_log(&logs, "[GitHub] access_token received, fetching user info");
+                    crate::app::dbg_log(
+                        &logs,
+                        "[GitHub] access_token received, fetching user info",
+                    );
                     let user_resp = client
                         .get("https://api.github.com/user")
                         .header("Authorization", format!("Bearer {}", token))
                         .header("User-Agent", "RustEpubReader")
                         .send()
                         .map_err(|e| {
-                            crate::app::dbg_log(&logs, format!("[GitHub] user info request failed: {}", e));
+                            crate::app::dbg_log(
+                                &logs,
+                                format!("[GitHub] user info request failed: {}", e),
+                            );
                             e.to_string()
                         })?;
                     let user: serde_json::Value = user_resp.json().map_err(|e| e.to_string())?;
                     let username = user["login"].as_str().unwrap_or("unknown").to_string();
-                    crate::app::dbg_log(&logs, format!("[GitHub] login success: user={}", username));
+                    crate::app::dbg_log(
+                        &logs,
+                        format!("[GitHub] login success: user={}", username),
+                    );
                     return Ok(PollResult::Success {
                         token: token.to_string(),
                         username,
@@ -212,8 +237,13 @@ impl ReaderApp {
                     self.push_feedback_log(format!("[GitHub] OAuth success: user={}", username));
                     // Save token to OS credential store
                     match reader_core::sharing::keystore::store_github_token(&token) {
-                        Ok(()) => self.push_feedback_log("[GitHub] token saved to OS credential store"),
-                        Err(e) => self.push_feedback_log(format!("[GitHub] WARN: failed to save token to keystore: {}", e)),
+                        Ok(()) => {
+                            self.push_feedback_log("[GitHub] token saved to OS credential store")
+                        }
+                        Err(e) => self.push_feedback_log(format!(
+                            "[GitHub] WARN: failed to save token to keystore: {}",
+                            e
+                        )),
                     }
                     self.github_token = Some(token);
                     self.github_username = Some(username);
@@ -224,7 +254,10 @@ impl ReaderApp {
                 }
                 Ok(PollResult::Pending) => {}
                 Ok(PollResult::SlowDown) => {
-                    self.push_feedback_log(format!("[GitHub] slow_down, increasing interval to {}s", self.github_oauth_interval + 5));
+                    self.push_feedback_log(format!(
+                        "[GitHub] slow_down, increasing interval to {}s",
+                        self.github_oauth_interval + 5
+                    ));
                     self.github_oauth_interval += 5;
                 }
                 Ok(PollResult::Expired) => {

@@ -315,7 +315,10 @@ impl ReaderApp {
                             // Dynamic title truncation based on available content width
                             let max_title_chars = ((content_rect.width() / 11.0) as usize).max(6);
                             let display_title = if title.chars().count() > max_title_chars {
-                                format!("{}…", title.chars().take(max_title_chars - 1).collect::<String>())
+                                format!(
+                                    "{}…",
+                                    title.chars().take(max_title_chars - 1).collect::<String>()
+                                )
                             } else {
                                 title.clone()
                             };
