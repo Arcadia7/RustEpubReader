@@ -276,6 +276,15 @@ fun ReaderScreen(
         )
     }
 
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val handleTextTapped: () -> Unit = {
+        focusManager.clearFocus(true)
+        selectionMenuVisible = false
+        if (!showSettingsSheet) {
+            showControls = !showControls
+        }
+    }
+
     // 读取 I18n.version 以确保语言切换时触发重组
     @Suppress("UNUSED_VARIABLE")
     val langVersion = I18n.version
@@ -406,6 +415,7 @@ fun ReaderScreen(
                     bgColor = bgColor,
                     fontFamily = fontFamily,
                     onLinkClick = onLinkClick,
+                    onTextTapped = handleTextTapped,
                     onOverscrollDown = {
                         onToggleBookmark()
                         bookmarkSnackText = if (!isChapterBookmarked) I18n.t("annotations.bookmark_added")
@@ -471,6 +481,7 @@ fun ReaderScreen(
                     }
                 },
                 onLinkClick = onLinkClick,
+                onTextTapped = handleTextTapped,
                 lineSpacing = lineSpacing,
                 paraSpacing = paraSpacing,
                 textIndent = textIndent
@@ -733,6 +744,7 @@ private fun ScrollModeContent(
     bgColor: Color,
     fontFamily: FontFamily,
     onLinkClick: (String) -> Unit,
+    onTextTapped: () -> Unit,
     onOverscrollDown: () -> Unit = {},
     lineSpacing: Float = 1.5f,
     paraSpacing: Float = 0.5f,
@@ -830,6 +842,7 @@ private fun ScrollModeContent(
                 linkColor = linkColor,
                 fontFamily = fontFamily,
                 onLinkClick = onLinkClick,
+                onTextTapped = onTextTapped,
                 lineSpacing = lineSpacing,
                 paraSpacing = paraSpacing,
                 textIndentChars = textIndent
@@ -863,6 +876,7 @@ private fun PageModeContent(
     onNextChapter: () -> Unit,
     onToggleControls: () -> Unit,
     onLinkClick: (String) -> Unit,
+    onTextTapped: () -> Unit,
     lineSpacing: Float = 1.5f,
     paraSpacing: Float = 0.5f,
     textIndent: Int = 2
@@ -1340,6 +1354,7 @@ private fun PageModeContent(
                     bottomPaddingDp = bottomPaddingDp,
                     slotPageLabel = slotPageLabel,
                     onLinkClick = onLinkClick,
+                    onTextTapped = onTextTapped,
                     isTwoColumn = isTwoColumn,
                     lineSpacing = lineSpacing,
                     paraSpacing = paraSpacing,
@@ -1432,6 +1447,7 @@ private fun PageModeContent(
                     bottomPaddingDp = bottomPaddingDp,
                     slotPageLabel = slotPageLabel,
                     onLinkClick = onLinkClick,
+                    onTextTapped = onTextTapped,
                     lineSpacing = lineSpacing,
                     paraSpacing = paraSpacing,
                     textIndentChars = textIndent
@@ -1565,6 +1581,7 @@ private fun PageModeContent(
                         bottomPaddingDp = bottomPaddingDp,
                         slotPageLabel = slotPageLabel,
                         onLinkClick = onLinkClick,
+                        onTextTapped = onTextTapped,
                         lineSpacing = lineSpacing,
                         paraSpacing = paraSpacing,
                         textIndentChars = textIndent
