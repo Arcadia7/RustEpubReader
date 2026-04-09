@@ -7,6 +7,9 @@ edition = "2021"
 default = []
 keychain = ["keyring"]
 csc = ["ort", "tokenizers"]
+cuda = ["csc", "ort/cuda"]
+tensorrt = ["csc", "ort/tensorrt"]
+directml = ["csc", "ort/directml"]
 
 [dependencies]
 epub = "2.1"

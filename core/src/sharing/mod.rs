@@ -1,3 +1,4 @@
+//! Module for local P2P book sharing and synchronization.
 // ── Debug logging with Android logcat support ──
 
 use std::sync::atomic::{AtomicBool, Ordering};

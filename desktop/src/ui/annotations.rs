@@ -1,3 +1,4 @@
+//! User Interface for viewing and managing book annotations and highlights.
 use crate::app::ReaderApp;
 use eframe::egui;
 use reader_core::library::HighlightColor;

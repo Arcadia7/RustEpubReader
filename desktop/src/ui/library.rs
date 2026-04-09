@@ -1,3 +1,4 @@
+//! The main library view, displaying the collection of books.
 use crate::app::ReaderApp;
 use eframe::egui;
 use egui::{Color32, CornerRadius, Stroke, StrokeKind, Vec2};

@@ -1,3 +1,4 @@
+//! General application settings UI.
 use crate::app::ReaderApp;
 use eframe::egui;
 use egui::{Color32, CornerRadius, Vec2};

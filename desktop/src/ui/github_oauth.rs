@@ -1,3 +1,4 @@
+//! GitHub OAuth authentication flow and UI integration.
 use crate::app::ReaderApp;
 
 /// GitHub OAuth App Client ID.

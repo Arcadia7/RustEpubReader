@@ -26,8 +26,11 @@ rodio = "0.20"
 openssl = { version = "0.10", features = ["vendored"], optional = true }
 
 [features]
-default = ["csc"]
+default = ["csc", "directml"]
 csc = ["reader_core/csc"]
+cuda = ["csc", "reader_core/cuda"]
+tensorrt = ["csc", "reader_core/tensorrt"]
+directml = ["csc", "reader_core/directml"]
 vendored-openssl = ["openssl/vendored"]
 
 [target.'cfg(windows)'.build-dependencies]

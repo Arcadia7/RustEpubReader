@@ -1,3 +1,4 @@
+//! Desktop build script for preparing icons and platform-specific resources.
 #[cfg(windows)]
 fn main() {
     let mut res = winres::WindowsResource::new();

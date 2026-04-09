@@ -134,11 +134,4 @@ fn render_chapter_xhtml(title: &str, content: &str) -> String {
     )
 }
 
-/// HTML 转义。
-fn escape_html(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-}
+use crate::escape_html;

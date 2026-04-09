@@ -1,3 +1,4 @@
+//! Book content and library metadata search engine.
 use crate::epub::{ContentBlock, EpubBook};
 
 #[derive(Clone, Debug)]

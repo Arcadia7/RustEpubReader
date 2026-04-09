@@ -1,3 +1,4 @@
+//! CSC ONNX model paths and configuration loading.
 use std::path::PathBuf;
 
 const MODEL_FILENAME: &str = "csc-macbert-int8.onnx";

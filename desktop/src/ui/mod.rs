@@ -1,3 +1,4 @@
+//! Defines the UI components and modular structure for the desktop application.
 pub mod about;
 pub mod annotations;
 pub mod csc_contribute;
@@ -6,6 +7,8 @@ pub mod export_dialog;
 pub mod github_oauth;
 pub mod library;
 pub mod reader;
+pub mod reader_block;
+pub mod reader_state;
 pub mod search;
 pub mod settings_new;
 pub mod sharing;

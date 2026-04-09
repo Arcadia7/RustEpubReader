@@ -1,3 +1,4 @@
+//! The Desktop application state machine, defining main app logic.
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -640,8 +641,7 @@ pub struct ReaderApp {
     pub show_github_login: bool,
     pub github_oauth_status: String,
     // GitHub OAuth Device Flow async channels
-    pub github_pending_device_code:
-        Option<std::sync::mpsc::Receiver<DeviceCodeResult>>,
+    pub github_pending_device_code: Option<std::sync::mpsc::Receiver<DeviceCodeResult>>,
     pub github_pending_token_poll:
         Option<std::sync::mpsc::Receiver<Result<crate::ui::github_oauth::PollResult, String>>>,
     pub github_last_poll: Option<std::time::Instant>,

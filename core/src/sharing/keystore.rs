@@ -1,3 +1,4 @@
+//! Keystore management for the secure P2P sharing feature.
 const SERVICE: &str = "com.epub.reader.sharing";
 
 /// Store the private key PEM in the OS keychain.

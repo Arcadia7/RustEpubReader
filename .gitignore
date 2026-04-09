@@ -38,3 +38,4 @@ peers.json
 settings.json
 books/
 models/
+android/app/src/main/jniLibs/

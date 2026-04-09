@@ -1,3 +1,4 @@
+//! Table of Contents (TOC) side-panel UI component.
 use crate::app::ReaderApp;
 use eframe::egui;
 

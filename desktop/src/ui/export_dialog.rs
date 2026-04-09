@@ -1,3 +1,4 @@
+//! Export dialog interface for saving annotations and data.
 use crate::app::ReaderApp;
 use eframe::egui;
 use reader_core::export::ExportMode;
@@ -83,6 +84,7 @@ impl ReaderApp {
                     notes: Vec::new(),
                     corrections: Vec::new(),
                     reading_stats: None,
+                    last_contribute_prompt_count: 0,
                 };
                 &fallback_cfg
             }

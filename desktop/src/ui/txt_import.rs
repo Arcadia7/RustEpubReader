@@ -1,3 +1,4 @@
+//! Interface for configuring TXT file import and parsing rules.
 use crate::app::{ReaderApp, TxtConvertSlot};
 use eframe::egui;
 use reader_core::txt::{ConvertOptions, SplitConfig};

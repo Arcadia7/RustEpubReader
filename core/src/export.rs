@@ -1,3 +1,4 @@
+//! Logic for exporting books, annotations, and reading data.
 use crate::epub::{ContentBlock, CorrectionStatus, EpubBook, InlineStyle};
 use crate::library::BookConfig;
 
@@ -127,7 +128,7 @@ fn build_chapter_xhtml(
                 let tag = format!("h{}", level.min(&6));
                 html.push_str(&format!("<{tag}>"));
                 for span in spans {
-                    html.push_str(&escape_xml(&span.text));
+                    html.push_str(&crate::escape_html(&span.text));
                 }
                 html.push_str(&format!("</{tag}>\n"));
             }
@@ -142,7 +143,7 @@ fn build_chapter_xhtml(
                             if corr.status == CorrectionStatus::Accepted {
                                 html.push_str(&format!(
                                     "<span class=\"corrected\">{}</span>",
-                                    escape_xml(&corr.corrected)
+                                    crate::escape_html(&corr.corrected)
                                 ));
                                 continue;
                             }
@@ -159,7 +160,7 @@ fn build_chapter_xhtml(
                                 "<aside class=\"reader-note\">\
                                  <p class=\"note-label\">\u{1f4dd}</p>\
                                  <p>{}</p></aside>",
-                                escape_xml(&note.content)
+                                crate::escape_html(&note.content)
                             ));
                         }
                     }
@@ -168,7 +169,7 @@ fn build_chapter_xhtml(
             }
             ContentBlock::Image { alt, .. } => {
                 let alt_text = alt.as_deref().unwrap_or("image");
-                html.push_str(&format!("<p>[{}]</p>\n", escape_xml(alt_text)));
+                html.push_str(&format!("<p>[{}]</p>\n", crate::escape_html(alt_text)));
             }
             ContentBlock::Separator => {
                 html.push_str("<hr/>\n");
@@ -184,18 +185,11 @@ fn build_chapter_xhtml(
 }
 
 fn render_span_xhtml(html: &mut String, span: &crate::epub::TextSpan) {
-    let text = escape_xml(&span.text);
+    let text = crate::escape_html(&span.text);
     match span.style {
         InlineStyle::Bold => html.push_str(&format!("<strong>{text}</strong>")),
         InlineStyle::Italic => html.push_str(&format!("<em>{text}</em>")),
         InlineStyle::BoldItalic => html.push_str(&format!("<strong><em>{text}</em></strong>")),
         InlineStyle::Normal => html.push_str(&text),
     }
-}
-
-fn escape_xml(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }

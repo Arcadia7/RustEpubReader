@@ -1,3 +1,4 @@
+//! Peer connection and management for local sharing.
 use serde::{Deserialize, Serialize};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;

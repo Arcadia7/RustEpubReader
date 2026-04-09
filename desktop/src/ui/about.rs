@@ -1,3 +1,4 @@
+//! About dialog and application information UI.
 use crate::app::{ReaderApp, UpdateState};
 use crate::self_update;
 use eframe::egui;

@@ -1,3 +1,4 @@
+//! Reading statistics and progress UI.
 use crate::app::ReaderApp;
 use eframe::egui;
 

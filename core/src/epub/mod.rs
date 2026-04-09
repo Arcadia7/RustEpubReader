@@ -1,3 +1,4 @@
+//! Core EPUB parsing, rendering, and book processing logic.
 pub mod chapter;
 pub mod parser;
 

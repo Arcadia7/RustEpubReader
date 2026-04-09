@@ -1,3 +1,4 @@
+//! UI for initiating and managing local P2P book sharing.
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 

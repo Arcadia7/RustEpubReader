@@ -1,3 +1,4 @@
+//! Defines the network protocol and message formats for P2P sharing.
 use serde::{Deserialize, Serialize};
 
 /// All messages are framed as: [4 bytes big-endian length][JSON payload]

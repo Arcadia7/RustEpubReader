@@ -1,3 +1,4 @@
+//! UI for contributing to the Chinese Spelling Correction dataset.
 use crate::app::ReaderApp;
 use eframe::egui;
 use reader_core::epub::ContentBlock;
@@ -6,8 +7,11 @@ const MODEL_REPO_OWNER: &str = "zhongbai2333";
 const MODEL_REPO_NAME: &str = "RustEpubReader-Model";
 const SUBMISSION_DIR: &str = "datasets/submissions";
 
-/// Minimum number of accepted/rejected corrections before prompting contribution.
-const MIN_CORRECTIONS_TO_PROMPT: usize = 10;
+/// Minimum number of accepted/rejected corrections before first prompt.
+const MIN_CORRECTIONS_TO_PROMPT: usize = 30;
+
+/// After first prompt, how many additional resolved corrections before prompting again.
+const PROMPT_INCREMENT: usize = 50;
 
 /// Max context chars on each side of the corrected character.
 const CONTEXT_RADIUS: usize = 10;
@@ -32,21 +36,34 @@ impl ReaderApp {
     /// Check if we should prompt the user to contribute corrections.
     /// Called periodically (e.g. on chapter change or popup close).
     pub fn csc_check_contribution_prompt(&mut self) {
-        // Don't prompt if already shown, or no GitHub login, or user already opted out this session
+        // Don't prompt if already shown this session, or user dismissed this session
         if self.csc_contribute_prompted || self.csc_contribute_dismissed {
             return;
         }
-        let corrections = match &self.book_config {
-            Some(cfg) => &cfg.corrections,
+        let cfg = match &self.book_config {
+            Some(cfg) => cfg,
             None => return,
         };
-        let resolved_count = corrections
+        let resolved_count = cfg
+            .corrections
             .iter()
             .filter(|r| r.status == "accepted" || r.status == "rejected")
             .count();
-        if resolved_count >= MIN_CORRECTIONS_TO_PROMPT {
+        let last_prompted = cfg.last_contribute_prompt_count;
+        // First prompt at MIN threshold; subsequent prompts require INCREMENT more
+        let threshold = if last_prompted == 0 {
+            MIN_CORRECTIONS_TO_PROMPT
+        } else {
+            last_prompted + PROMPT_INCREMENT
+        };
+        if resolved_count >= threshold {
             self.csc_contribute_prompted = true;
             self.show_csc_contribute_dialog = true;
+            // Persist the count so we don't prompt again at this level
+            if let Some(cfg) = &mut self.book_config {
+                cfg.last_contribute_prompt_count = resolved_count;
+                cfg.save(&self.data_dir);
+            }
         }
     }
 

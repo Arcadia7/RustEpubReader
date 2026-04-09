@@ -1,3 +1,4 @@
+//! Refactored or updated settings interface for the application.
 use crate::app::ReaderApp;
 use eframe::egui;
 use egui::{Color32, Vec2};

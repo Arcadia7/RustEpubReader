@@ -1,3 +1,4 @@
+//! Data structures and logic related to EPUB chapters.
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 

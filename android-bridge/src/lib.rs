@@ -1,3 +1,5 @@
+//! JNI bridge and bindings for the Android platform.
+
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jstring};
 use jni::JNIEnv;

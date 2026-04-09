@@ -1,3 +1,4 @@
+//! Text-to-Speech (TTS) control floating UI and settings.
 use crate::app::ReaderApp;
 use eframe::egui;
 use egui::{Color32, CornerRadius, Stroke, Vec2};

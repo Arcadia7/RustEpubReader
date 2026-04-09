@@ -1,3 +1,4 @@
+//! Configuration UI for the Chinese Spelling Correction engine.
 use crate::app::ReaderApp;
 use eframe::egui;
 use reader_core::csc::{CorrectionMode, CscThreshold, ModelStatus};

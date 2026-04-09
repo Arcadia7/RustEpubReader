@@ -1,3 +1,4 @@
+//! Tokenizer integration for the Chinese Spelling Correction model.
 use std::path::Path;
 
 /// Maximum sequence length for MacBERT input.

@@ -1,3 +1,4 @@
+//! UI component for performing textual searches within the book.
 use crate::app::ReaderApp;
 use eframe::egui;
 

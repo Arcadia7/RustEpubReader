@@ -1,3 +1,4 @@
+//! Chinese Spelling Correction (CSC) module and engine implementation.
 pub mod model;
 #[cfg(feature = "csc")]
 pub mod tokenizer;
@@ -64,6 +65,8 @@ pub struct CscEngine {
     session: Option<ort::session::Session>,
     #[cfg(feature = "csc")]
     tokenizer: Option<tokenizer::CscTokenizer>,
+    #[cfg(feature = "csc")]
+    ep_name: &'static str,
 }
 
 impl CscEngine {
@@ -75,6 +78,8 @@ impl CscEngine {
             session: None,
             #[cfg(feature = "csc")]
             tokenizer: None,
+            #[cfg(feature = "csc")]
+            ep_name: "CPU",
         }
     }
 
@@ -86,6 +91,18 @@ impl CscEngine {
         }
         #[cfg(not(feature = "csc"))]
         false
+    }
+
+    /// Returns a human-readable name for the active execution provider.
+    pub fn execution_provider(&self) -> &'static str {
+        #[cfg(feature = "csc")]
+        {
+            self.ep_name
+        }
+        #[cfg(not(feature = "csc"))]
+        {
+            "none"
+        }
     }
 
     /// Load ONNX model and tokenizer from data directory.
@@ -101,11 +118,9 @@ impl CscEngine {
             return Err("Vocabulary file not found. Please download the model first.".into());
         }
 
-        // Load ONNX session
-        let session = ort::session::Session::builder()?
-            .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)?
-            .with_intra_threads(2)?
-            .commit_from_file(&model_path)?;
+        // Load ONNX session with GPU acceleration (fallback to CPU)
+        let (session, ep_name) = Self::create_session(&model_path)?;
+        self.ep_name = ep_name;
 
         // Load tokenizer
         let tok = tokenizer::CscTokenizer::from_vocab(&vocab_path)?;
@@ -113,6 +128,47 @@ impl CscEngine {
         self.session = Some(session);
         self.tokenizer = Some(tok);
         Ok(())
+    }
+
+    /// Try GPU execution providers in priority order, fall back to CPU.
+    #[cfg(feature = "csc")]
+    fn create_session(
+        model_path: &std::path::Path,
+    ) -> Result<(ort::session::Session, &'static str), Box<dyn std::error::Error>> {
+        use ort::ep::*;
+        use ort::session::builder::GraphOptimizationLevel;
+        use ort::session::Session;
+
+        // Ordered list of (EP, label) to try before CPU
+        let gpu_eps: Vec<(ExecutionProviderDispatch, &'static str)> = vec![
+            #[cfg(feature = "cuda")]
+            (CUDAExecutionProvider::default().build(), "CUDA"),
+            #[cfg(feature = "tensorrt")]
+            (TensorRTExecutionProvider::default().build(), "TensorRT"),
+            #[cfg(feature = "directml")]
+            (DirectMLExecutionProvider::default().build(), "DirectML"),
+        ];
+
+        for (ep, name) in gpu_eps {
+            let result = (|| -> Result<ort::session::Session, Box<dyn std::error::Error>> {
+                let session = Session::builder()?
+                    .with_optimization_level(GraphOptimizationLevel::Level3)?
+                    .with_execution_providers([ep])?
+                    .commit_from_file(model_path)?;
+                Ok(session)
+            })();
+            match result {
+                Ok(session) => return Ok((session, name)),
+                Err(e) => eprintln!("[CSC] {name} unavailable: {e}, trying next..."),
+            }
+        }
+
+        // CPU fallback
+        let session = Session::builder()?
+            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_intra_threads(2)?
+            .commit_from_file(model_path)?;
+        Ok((session, "CPU"))
     }
 
     /// Check a text string for potential corrections.
