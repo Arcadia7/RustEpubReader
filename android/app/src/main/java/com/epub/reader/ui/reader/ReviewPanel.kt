@@ -3,10 +3,12 @@ package com.zhongbai233.epub.reader.ui.reader
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -14,6 +16,83 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zhongbai233.epub.reader.i18n.I18n
 import com.zhongbai233.epub.reader.model.ContentBlock
+
+/** Parsed review card data */
+private data class ReviewCard(
+    val index: Int,
+    val content: String,
+    val author: String,
+    val timestamp: String,
+    val likes: Int
+)
+
+/** Format Unix timestamp to readable date string */
+private fun formatTimestamp(raw: String): String {
+    val ts = raw.toLongOrNull() ?: return raw
+    return try {
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+        sdf.format(java.util.Date(ts * 1000))
+    } catch (_: Exception) {
+        raw
+    }
+}
+
+/**
+ * Try to parse a review paragraph into structured card data.
+ * Expected format: "1. 【内容】 作者：xxx | 时间：xxx | 赞：52"
+ */
+private fun parseReviewCard(text: String): ReviewCard? {
+    val trimmed = text.trim()
+
+    // Extract index: "1. ..."
+    val dotPos = trimmed.indexOf('.')
+    if (dotPos <= 0) return null
+    val index = trimmed.substring(0, dotPos).trim().toIntOrNull() ?: return null
+    val rest = trimmed.substring(dotPos + 1).trim()
+
+    // Parse from the end to avoid | inside review content causing offset
+    // Step 1: find "赞：xx" at the end
+    val likesDelims = listOf(" | 赞：", " | 赞:", " ｜ 赞：", " ｜ 赞:", "|赞：", "|赞:", "｜赞：", "｜赞:")
+    var likesPart: String? = null
+    var beforeLikes: String? = null
+    for (delim in likesDelims) {
+        val pos = rest.lastIndexOf(delim)
+        if (pos >= 0) {
+            likesPart = rest.substring(pos + delim.length).trim()
+            beforeLikes = rest.substring(0, pos)
+            break
+        }
+    }
+    if (likesPart == null) return null
+    val likes = likesPart.toIntOrNull() ?: return null
+
+    // Step 2: find "时间：xxx" before likes
+    val timeDelims = listOf(" | 时间：", " | 时间:", " ｜ 时间：", " ｜ 时间:", "|时间：", "|时间:", "｜时间：", "｜时间:")
+    var timestampRaw: String? = null
+    var contentAuthorPart: String? = null
+    for (delim in timeDelims) {
+        val pos = beforeLikes!!.lastIndexOf(delim)
+        if (pos >= 0) {
+            timestampRaw = beforeLikes.substring(pos + delim.length).trim()
+            contentAuthorPart = beforeLikes.substring(0, pos)
+            break
+        }
+    }
+    if (timestampRaw == null) return null
+    val timestamp = formatTimestamp(timestampRaw)
+
+    // Step 3: split content and author from the remaining part
+    val authorFull = "作者："
+    val authorAscii = "作者:"
+    val authorPos = contentAuthorPart!!.lastIndexOf(authorFull).takeIf { it >= 0 }
+        ?: contentAuthorPart.lastIndexOf(authorAscii).takeIf { it >= 0 }
+        ?: return null
+    val authorMarkerLen = if (contentAuthorPart.contains(authorFull)) authorFull.length else authorAscii.length
+    val content = contentAuthorPart.substring(0, authorPos).trim()
+    val author = contentAuthorPart.substring(authorPos + authorMarkerLen).trim()
+
+    return ReviewCard(index, content, author, timestamp, likes)
+}
 
 /**
  * 段评面板 — 底部弹层展示段评内容
@@ -23,6 +102,7 @@ import com.zhongbai233.epub.reader.model.ContentBlock
 fun ReviewPanel(
     chapterTitle: String,
     blocks: List<ContentBlock>,
+    anchorId: String? = null,
     fontSize: Float = 16f,
     onDismiss: () -> Unit
 ) {
@@ -68,9 +148,26 @@ fun ReviewPanel(
             HorizontalDivider()
             Spacer(Modifier.height(8.dp))
 
+            // Filter blocks by anchor if specified; fallback to all if no match
+            val filteredBlocks = remember(blocks, anchorId) {
+                if (anchorId.isNullOrBlank()) blocks
+                else {
+                    val matched = blocks.filter { block ->
+                        val blockAnchor = when (block) {
+                            is ContentBlock.Heading -> block.anchor_id
+                            is ContentBlock.Paragraph -> block.anchor_id
+                            else -> null
+                        }
+                        blockAnchor != null && blockAnchor == anchorId
+                    }
+                    // Review chapter paragraphs usually have no id; show all if nothing matches
+                    matched.ifEmpty { blocks }
+                }
+            }
+
             // Content
             LazyColumn {
-                items(blocks) { block ->
+                items(filteredBlocks) { block ->
                     when (block) {
                         is ContentBlock.Heading -> {
                             val text = block.spans.joinToString("") { it.text }
@@ -89,11 +186,16 @@ fun ReviewPanel(
                         is ContentBlock.Paragraph -> {
                             val text = block.spans.joinToString("") { it.text }
                             if (text.isNotBlank()) {
-                                Text(
-                                    text = text,
-                                    fontSize = fontSize.sp,
-                                    modifier = Modifier.padding(vertical = 4.dp)
-                                )
+                                val card = parseReviewCard(text)
+                                if (card != null) {
+                                    ReviewCardItem(card = card, fontSize = fontSize)
+                                } else {
+                                    Text(
+                                        text = text,
+                                        fontSize = fontSize.sp,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
+                                }
                             }
                         }
                         is ContentBlock.Separator -> {
@@ -108,6 +210,49 @@ fun ReviewPanel(
                         else -> {}
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReviewCardItem(card: ReviewCard, fontSize: Float) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp)
+        ) {
+            // Content
+            Text(
+                text = card.content,
+                fontSize = fontSize.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            // Author / Time / Likes
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = card.author,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "${card.timestamp} · 赞 ${card.likes}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
             }
         }
     }
