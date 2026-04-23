@@ -2,6 +2,7 @@ package com.zhongbai233.epub.reader
 
 import android.net.Uri
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -10,6 +11,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +22,7 @@ import androidx.compose.foundation.background
 import androidx.compose.animation.core.tween
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.dp
 import com.zhongbai233.epub.reader.ui.library.AboutScreen
 import com.zhongbai233.epub.reader.ui.library.LibraryScreen
 import com.zhongbai233.epub.reader.ui.library.SharingDialog
@@ -55,7 +59,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun MainContent(vm: ReaderViewModel) {
     // 读取 I18n.version 以确保语言切换时触发重组
@@ -86,6 +90,30 @@ private fun MainContent(vm: ReaderViewModel) {
     // 关于界面状态
     var showAboutScreen by remember { mutableStateOf(false) }
 
+    val currentBook = vm.currentBook
+
+    BackHandler(
+        enabled = vm.showTxtImport ||
+            showSharingDialog ||
+            vm.showContributeDialog ||
+            vm.showAnnotationsPanel ||
+            vm.showSearch ||
+            drawerState.isOpen ||
+            currentBook != null ||
+            showAboutScreen
+    ) {
+        when {
+            vm.showTxtImport -> vm.dismissTxtImport()
+            showSharingDialog -> showSharingDialog = false
+            vm.showContributeDialog -> vm.dismissContributeDialog()
+            vm.showAnnotationsPanel -> vm.showAnnotationsPanel = false
+            vm.showSearch -> vm.showSearch = false
+            drawerState.isOpen -> scope.launch { drawerState.close() }
+            currentBook != null -> vm.closeBook()
+            showAboutScreen -> showAboutScreen = false
+        }
+    }
+
     // 错误提示
     vm.errorMessage?.let { msg ->
         AlertDialog(
@@ -104,16 +132,26 @@ private fun MainContent(vm: ReaderViewModel) {
             AlertDialog(
                 onDismissRequest = { vm.dismissUpdateDialog() },
                 confirmButton = {
-                    TextButton(onClick = {
-                        vm.dismissUpdateDialog()
-                        runCatching { uriHandler.openUri(info.downloadUrl) }
-                    }) {
-                        Text(I18n.t("update.download_update"))
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { vm.dismissUpdateDialog() }) {
-                        Text(I18n.t("feedback.not_now"))
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TextButton(onClick = {
+                            vm.dismissUpdateDialog()
+                            runCatching { uriHandler.openUri(info.cdnDownloadUrl) }
+                        }) {
+                            Text(I18n.t("update.download_cdn"))
+                        }
+                        TextButton(onClick = {
+                            vm.dismissUpdateDialog()
+                            runCatching { uriHandler.openUri(info.githubDownloadUrl) }
+                        }) {
+                            Text(I18n.t("update.download_github"))
+                        }
+                        TextButton(onClick = { vm.dismissUpdateDialog() }) {
+                            Text(I18n.t("feedback.not_now"))
+                        }
                     }
                 },
                 title = { Text(I18n.t("update.check")) },
@@ -126,7 +164,7 @@ private fun MainContent(vm: ReaderViewModel) {
     Box(Modifier.fillMaxSize()) {
         // 主内容（加载完成后显示）
         if (!vm.isLoading) {
-            val book = vm.currentBook
+            val book = currentBook
 
             if (book == null) {
                 if (showAboutScreen) {
