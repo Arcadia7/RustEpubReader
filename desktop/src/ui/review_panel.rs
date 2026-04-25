@@ -228,7 +228,7 @@ impl ReaderApp {
 
         // ── Compute anchor scroll offset (only on the frame the panel opens) ──
         let content_width = panel_width - 32.0; // margin * 2
-        let scroll_offset = if was_just_opened {
+        let scroll_offset = if was_just_opened && self.review_panel_show_all {
             self.review_panel_scroll_offset.take().or_else(|| {
                 self.review_panel_anchor.as_ref().and_then(|anchor| {
                     compute_anchor_scroll_offset(&chapter.blocks, anchor, self.font_size, content_width)
@@ -358,6 +358,17 @@ impl ReaderApp {
                                                 }
                                                 // Before match: skip headings
                                             }
+                                            reader_core::epub::ContentBlock::Paragraph {
+                                                anchor_id,
+                                                ..
+                                            } => {
+                                                if !in_group && anchor_id.as_ref() == Some(filter) {
+                                                    in_group = true;
+                                                }
+                                                if in_group {
+                                                    result.push(block);
+                                                }
+                                            }
                                             _ => {
                                                 if in_group {
                                                     result.push(block);
@@ -365,7 +376,12 @@ impl ReaderApp {
                                             }
                                         }
                                     }
-                                    result
+                                    // Fallback: show all blocks if no anchor match was found
+                                    if result.is_empty() {
+                                        chapter.blocks.iter().collect()
+                                    } else {
+                                        result
+                                    }
                                 } else {
                                     chapter.blocks.iter().collect()
                                 }
