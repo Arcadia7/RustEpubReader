@@ -214,7 +214,7 @@ pub fn handle_client(
         .map(|a| a.to_string())
         .unwrap_or("?".into());
     dbg_log!("SERVER: new client connection from {}", peer_addr);
-    dbg_log!("SERVER: expecting PIN = '{}'", pin);
+    dbg_log!("SERVER: expecting PIN (len={})", pin.len());
 
     let msg = read_message(stream)?;
     dbg_log!(
@@ -445,15 +445,10 @@ fn handle_pairing(
                 public_key_pem,
             } => {
                 dbg_log!(
-                    "PAIRING: received PairRequest, client_pin='{}' server_pin='{}' match={}",
-                    client_pin,
-                    pin,
+                    "PAIRING: received PairRequest, client_pin_len={} server_pin_len={} match={}",
+                    client_pin.len(),
+                    pin.len(),
                     client_pin == pin
-                );
-                dbg_log!(
-                    "PAIRING: client_pin bytes={:?} server_pin bytes={:?}",
-                    client_pin.as_bytes(),
-                    pin.as_bytes()
                 );
                 if client_pin == pin {
                     let pairing_uuid = generate_uuid();
