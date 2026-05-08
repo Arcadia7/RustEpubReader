@@ -235,8 +235,8 @@
 
   "settings.line_spacing": "行间距:",
   "settings.para_spacing": "段间距:",
-  "settings.keyboard_scroll_step": "??????:",
-  "settings.mouse_side_buttons": "??????????",
+  "settings.keyboard_scroll_step": "↓键滚动步长:",
+  "settings.mouse_side_buttons": "启用鼠标侧键切换章节",
   "settings.text_indent": "首行缩进:",
 
   "context.copy": "复制",
