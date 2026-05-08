@@ -152,6 +152,20 @@ impl ReaderApp {
             }
         });
 
+        ui.horizontal(|ui| {
+            ui.label(self.i18n.t("settings.keyboard_scroll_step"));
+            ui.add_sized(
+                [ui.available_width().min(170.0), 18.0],
+                egui::Slider::new(&mut self.keyboard_scroll_step, 20.0..=600.0)
+                    .suffix(" px"),
+            );
+        });
+
+        ui.checkbox(
+            &mut self.mouse_side_buttons_enabled,
+            self.i18n.t("settings.mouse_side_buttons"),
+        );
+
         // Line spacing
         ui.horizontal(|ui| {
             ui.label(self.i18n.t("settings.line_spacing"));
