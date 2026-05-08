@@ -254,10 +254,6 @@ fn default_text_indent() -> u8 {
     2
 }
 
-fn default_keyboard_scroll_step() -> f32 {
-    120.0
-}
-
 fn default_mouse_side_buttons_enabled() -> bool {
     true
 }
@@ -298,8 +294,6 @@ struct AppSettings {
     para_spacing: f32,
     #[serde(default = "default_text_indent")]
     text_indent: u8,
-    #[serde(default = "default_keyboard_scroll_step")]
-    keyboard_scroll_step: f32,
     #[serde(default = "default_mouse_side_buttons_enabled")]
     mouse_side_buttons_enabled: bool,
     #[serde(default)]
@@ -379,7 +373,6 @@ impl AppSettings {
             line_spacing: app.line_spacing,
             para_spacing: app.para_spacing,
             text_indent: app.text_indent,
-            keyboard_scroll_step: app.keyboard_scroll_step,
             mouse_side_buttons_enabled: app.mouse_side_buttons_enabled,
             auto_scroll_speed: app.auto_scroll_speed,
             tts_voice_name: app.tts_voice_name.clone(),
@@ -412,7 +405,6 @@ impl AppSettings {
         app.line_spacing = self.line_spacing.clamp(0.8, 2.5);
         app.para_spacing = self.para_spacing.clamp(0.0, 2.0);
         app.text_indent = self.text_indent.min(4);
-        app.keyboard_scroll_step = self.keyboard_scroll_step.clamp(20.0, 600.0);
         app.mouse_side_buttons_enabled = self.mouse_side_buttons_enabled;
         app.auto_scroll_speed = self.auto_scroll_speed.clamp(0.0, 200.0);
         app.i18n.set_language(Language::from_code(&self.language));
@@ -606,7 +598,6 @@ pub struct ReaderApp {
     #[allow(dead_code)]
     pub auto_scroll: bool,
     pub auto_scroll_speed: f32,
-    pub keyboard_scroll_step: f32,
     pub mouse_side_buttons_enabled: bool,
     // ── Library export ──
     pub export_library_path: Option<String>,
@@ -887,7 +878,6 @@ impl Default for ReaderApp {
             // Auto-scroll
             auto_scroll: false,
             auto_scroll_speed: 30.0,
-            keyboard_scroll_step: default_keyboard_scroll_step(),
             mouse_side_buttons_enabled: default_mouse_side_buttons_enabled(),
             export_library_path: None,
             text_selection: None,
