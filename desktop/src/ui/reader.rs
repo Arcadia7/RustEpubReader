@@ -210,26 +210,9 @@ impl ReaderApp {
                     .unwrap_or_default();
 
                 if self.scroll_mode {
-                    let scroll_area_id_salt = "reader_scroll_area";
-                    let scroll_area_id = ui.make_persistent_id(egui::Id::new(scroll_area_id_salt));
-                    let keyboard_scroll_offset = ui.ctx().input(|i| {
-                        if i.key_pressed(egui::Key::ArrowDown) && !ui.ctx().wants_keyboard_input() {
-                            let step = self.keyboard_scroll_step.clamp(20.0, 600.0);
-                            egui::scroll_area::State::load(ui.ctx(), scroll_area_id)
-                                .map(|state| state.offset.y + step)
-                                .unwrap_or(step)
-                        } else {
-                            f32::NAN
-                        }
-                    });
-                    let mut scroll_area = egui::ScrollArea::vertical()
-                        .id_salt(scroll_area_id_salt)
-                        .auto_shrink([false; 2]);
-                    if self.scroll_to_top {
+                    let mut scroll_area = egui::ScrollArea::vertical().auto_shrink([false; 2]);                    if self.scroll_to_top {
                         scroll_area = scroll_area.vertical_scroll_offset(0.0);
                         self.scroll_to_top = false;
-                    } else if keyboard_scroll_offset.is_finite() {
-                        scroll_area = scroll_area.vertical_scroll_offset(keyboard_scroll_offset);
                     }
                     scroll_area.show(ui, |ui| {
                         render_content_layout(
